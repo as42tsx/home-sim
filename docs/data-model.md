@@ -35,7 +35,7 @@
 
 `id`、`a`、`b`（同一层上的节点，且不能是同一个点）、`thickness`（60–500）、`height`（数字，或 `null` 表示用本层净高）、`bearing`、`exterior`、`demolished`、`finish.left` / `finish.right`。
 
-**待产品确认：可选 `virtual`（省略即 false）。** 为 true 时这是房间分隔线，不是实体墙：参与房间推导，内缩厚度按 0，不画成墙，不能挂洞口，不能是承重（否则 `VIRTUAL_BEARING`）。v1.2 模板用它做开放连通：一居玄关与客餐厅、两居过道与客餐厅、三居客厅与餐厅以及过道与客厅。数据里厚度仍写成 120，以满足墙厚下限；算法忽略这个厚度。
+**待产品确认：可选 `virtual`（省略即 false）。** 为 true 时这是房间分隔线，不是实体墙：参与房间推导，内缩厚度按 0，不画成墙，不能挂洞口，不能是承重（否则 `VIRTUAL_BEARING`）。v1.3 模板用它做开放连通：一居玄关与客餐厅、两居过道与客餐厅、三居客厅与餐厅以及过道与客厅。数据里厚度仍写成 120，以满足墙厚下限；算法忽略这个厚度。
 
 `demolished: true` 的墙不参与房间推导。短于 50 mm 的墙在规范化时丢掉。
 
@@ -101,7 +101,7 @@
 
 ## 模板文件
 
-`schema/template.v2.schema.json`：`{ kind: "home-sim-template", id, name, source, areaBasis, expected, plan }`。`expected` 是中线面积、房间数和中线套内合计（v1.2 的 `areaBasis` 仍是 `centerline`），不是推导出的使用面积。`templates/index.json` 的 `netAreaM2` 是不含阳台的使用面积（推导内净，四舍五入到两位小数）。面积核对见 `docs/template-area-report.md`。
+`schema/template.v2.schema.json`：`{ kind: "home-sim-template", id, name, source, areaBasis, expected, plan }`。`expected` 是中线面积、房间数和中线套内合计（v1.3 的 `areaBasis` 仍是 `centerline`），不是推导出的使用面积。`templates/index.json` 的 `netAreaM2` 是不含阳台的使用面积（推导内净，四舍五入到两位小数）。面积核对见 `docs/template-area-report.md`。
 
 ## 版本
 

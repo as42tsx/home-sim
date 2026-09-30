@@ -13,7 +13,7 @@ import { deriveAllFloors } from '../src/rooms/index.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * v1.2 has no clearance violations.
+ * v1.3 has no clearance violations.
  * checkOpeningPlacement returns an empty list for every opening.
  */
 const KNOWN_CLEARANCE_VIOLATIONS = {

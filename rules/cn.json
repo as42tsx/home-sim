@@ -1,0 +1,181 @@
+{
+  "id": "cn",
+  "title": "中国住宅套内楼梯",
+  "verifiedOn": "2026-09-30",
+  "disclaimer": "仅作设计提示，不是合规认证。条文以正式出版物为准。",
+  "sources": [
+    {
+      "name": "GB 50096-2011《住宅设计规范》",
+      "note": "第5.7.3、5.7.4条为套内楼梯，不在 GB 55038-2025 已公布的被替代条文清单中。",
+      "url": "https://gf.cabr-fire.com/article-7235.htm"
+    },
+    {
+      "name": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm"
+    }
+  ],
+  "limits": {
+    "widthOpenSide": {
+      "value": 750,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.3条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "套内楼梯一边临空时梯段净宽不应小于 0.75 m。"
+    },
+    "widthBetweenWalls": {
+      "value": 900,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.3条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "套内楼梯两边为墙时梯段净宽不应小于 0.90 m，并应在其中一边墙面设置扶手。M1 取该项作为宽度下限（严于临空 750）。"
+    },
+    "treadMin": {
+      "value": 220,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.4条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "踏步宽度不应小于 0.22 m。与 GB 50352-2019 表 6.8.10 住宅套内楼梯 0.220 m 一致。"
+    },
+    "riserMax": {
+      "value": 200,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.4条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "踏步高度不应大于 0.20 m。与 GB 50352-2019 表 6.8.10 住宅套内楼梯 0.200 m 一致。"
+    },
+    "winderTreadMin": {
+      "value": 220,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.4条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "扇形踏步距扶手中心 250 mm 处的宽度不应小于 0.22 m。"
+    },
+    "winderMeasureOffset": {
+      "value": 250,
+      "unit": "mm",
+      "clause": "GB 50096-2011 第5.7.4条",
+      "source": "GB 50096-2011《住宅设计规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": true,
+      "note": "扇形踏步宽度的量取位置：距扶手中心 250 mm。"
+    },
+    "landingTurnMin": {
+      "value": 1200,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.4条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "转向平台最小宽度不应小于梯段净宽，且不应小于 1.20 m。检查时取 max(梯段宽, 1200)。"
+    },
+    "straightLandingMin": {
+      "value": 900,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.4条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "直跑楼梯中间平台宽度不应小于 0.90 m。"
+    },
+    "flightStepsMin": {
+      "value": 3,
+      "unit": "count",
+      "clause": "GB 50352-2019 第6.8.5条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "每个梯段的踏步不应少于 3 级。"
+    },
+    "flightStepsMax": {
+      "value": 18,
+      "unit": "count",
+      "clause": "GB 50352-2019 第6.8.5条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "每个梯段的踏步不应超过 18 级。"
+    },
+    "headroomLanding": {
+      "value": 2000,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.6条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "平台上部及下部过道处的净高不应小于 2.00 m。M1 只记录限值，楼梯对象不含实测净高。"
+    },
+    "headroomFlight": {
+      "value": 2200,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.6条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "梯段净高不应小于 2.20 m。M1 只记录限值。"
+    },
+    "handrailMin": {
+      "value": 900,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.8条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "室内楼梯扶手高度自踏步前缘线量起不宜小于 0.90 m。检查只给出提醒，不判断已绘制的扶手。"
+    },
+    "guardLongMin": {
+      "value": 1050,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.8条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "水平栏杆长度大于 0.50 m 时，扶手高度不应小于 1.05 m。"
+    },
+    "guardLongThreshold": {
+      "value": 500,
+      "unit": "mm",
+      "clause": "GB 50352-2019 第6.8.8条",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "水平栏杆长度超过该值时适用 1050 mm 的栏杆高度。"
+    },
+    "tableTreadMin": {
+      "value": 220,
+      "unit": "mm",
+      "clause": "GB 50352-2019 表6.8.10",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "住宅套内楼梯踏步最小宽度 0.220 m。与教材转载的表值一致，并与 GB 50096 第5.7.4条相符。"
+    },
+    "tableRiserMax": {
+      "value": 200,
+      "unit": "mm",
+      "clause": "GB 50352-2019 表6.8.10",
+      "source": "GB 50352-2019《民用建筑设计统一标准》",
+      "url": "https://gf.cabr-fire.com/article-30062.htm",
+      "verified": true,
+      "note": "住宅套内楼梯踏步最大高度 0.200 m。"
+    },
+    "gb55038Check": {
+      "value": null,
+      "unit": null,
+      "clause": "GB 55038-2025",
+      "source": "GB 55038-2025《住宅项目规范》",
+      "url": "https://gf.cabr-fire.com/article-7235.htm",
+      "verified": false,
+      "note": "GB 55038-2025《住宅项目规范》自 2025-05-01 起为强制性工程建设规范，可能重述套内楼梯限值。尚未对照其正式文本，不把未核对的数字写入本文件。"
+    }
+  }
+}

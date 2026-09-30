@@ -1,0 +1,263 @@
+{
+  "id": "us",
+  "title": "2021 IRC stairways",
+  "verifiedOn": "2026-09-30",
+  "disclaimer": "Hints only, not a compliance certificate. The 2024 IRC renumbered stair provisions and is not used here.",
+  "sources": [
+    {
+      "name": "2021 International Residential Code §R311.7",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "note": "Verified against the Stairway Manufacturers' Association visual interpretation, which quotes the 2021 IRC text. The ICC primary page was not machine-readable."
+    },
+    {
+      "name": "ICC 2021 IRC chapter 3",
+      "url": "https://codes.iccsafe.org/content/IRC2021P2/chapter-3-building-planning",
+      "note": "Primary publication. Automated access was blocked, so figures were checked against the SMA reproduction rather than the ICC HTML."
+    }
+  ],
+  "limits": {
+    "widthClear": {
+      "value": 914,
+      "unit": "mm",
+      "clause": "R311.7.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Width ≥ 36 in (914 mm) clear above handrail height. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "widthBelowOneHandrail": {
+      "value": 787,
+      "unit": "mm",
+      "clause": "R311.7.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "≥ 31½ in (787 mm) at and below one handrail. Not used as the stair-width minimum. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "widthBelowTwoHandrails": {
+      "value": 698,
+      "unit": "mm",
+      "clause": "R311.7.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "≥ 27 in (698 mm) at and below two handrails. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "handrailProjectionMax": {
+      "value": 114,
+      "unit": "mm",
+      "clause": "R311.7.8.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Handrail projection ≤ 4½ in (114 mm) each side. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "headroom": {
+      "value": 2032,
+      "unit": "mm",
+      "clause": "R311.7.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Headroom ≥ 6 ft 8 in (2032 mm). Recorded only; the stair object has no measured headroom. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "flightRiseMax": {
+      "value": 3835,
+      "unit": "mm",
+      "clause": "R311.7.3",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Maximum vertical rise of a flight is 12 ft 7 in (3835 mm) between floor levels or landings. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "riserMax": {
+      "value": 196,
+      "unit": "mm",
+      "clause": "R311.7.5.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Riser ≤ 7¾ in (196 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "riserVariation": {
+      "value": 9.5,
+      "unit": "mm",
+      "clause": "R311.7.5.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Riser variation ≤ ⅜ in (9.5 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "treadMin": {
+      "value": 254,
+      "unit": "mm",
+      "clause": "R311.7.5.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Tread depth ≥ 10 in (254 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "treadVariation": {
+      "value": 9.5,
+      "unit": "mm",
+      "clause": "R311.7.5.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Tread variation ≤ ⅜ in (9.5 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "winderTreadWalkline": {
+      "value": 254,
+      "unit": "mm",
+      "clause": "R311.7.5.2.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Winder tread ≥ 10 in at the walkline. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "winderTreadMin": {
+      "value": 152,
+      "unit": "mm",
+      "clause": "R311.7.5.2.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Winder tread ≥ 6 in (152 mm) at any point. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "walklineOffset": {
+      "value": 305,
+      "unit": "mm",
+      "clause": "R311.7.4",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Walkline is 12 in (305 mm) from the inside of the turn. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "nosingMin": {
+      "value": 19,
+      "unit": "mm",
+      "clause": "R311.7.5.3",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Nosing ¾ in (19 mm) minimum unless tread ≥ 11 in. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "nosingMax": {
+      "value": 32,
+      "unit": "mm",
+      "clause": "R311.7.5.3",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Nosing 1¼ in (32 mm) maximum. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "nosingExemptTread": {
+      "value": 279,
+      "unit": "mm",
+      "clause": "R311.7.5.3",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Nosing is not required when tread depth is ≥ 11 in (279 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "landingTurnMin": {
+      "value": 914,
+      "unit": "mm",
+      "clause": "R311.7.6",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Landing depth ≥ 36 in (914 mm) in the direction of travel, and landing width ≥ flight width. Turning landings are checked against max(914, flight width). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "straightLandingMin": {
+      "value": 914,
+      "unit": "mm",
+      "clause": "R311.7.6",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Straight-run landing depth ≥ 36 in (914 mm). Landing width equals the flight width by construction. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "handrailMinRisers": {
+      "value": 4,
+      "unit": "count",
+      "clause": "R311.7.8",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Handrail on at least one side for flights with 4 or more risers. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "handrailMin": {
+      "value": 864,
+      "unit": "mm",
+      "clause": "R311.7.8.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Handrail height 34 in (864 mm) minimum. Checked only as a reminder. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "handrailHeightMax": {
+      "value": 965,
+      "unit": "mm",
+      "clause": "R311.7.8.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Handrail height 38 in (965 mm) maximum. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "guardHeight": {
+      "value": 914,
+      "unit": "mm",
+      "clause": "R312.1.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Guard height ≥ 36 in (914 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "stairGuardMin": {
+      "value": 864,
+      "unit": "mm",
+      "clause": "R312.1.2",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Open side of stairs ≥ 34 in (864 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "spiralWidthMin": {
+      "value": 660,
+      "unit": "mm",
+      "clause": "R311.7.10.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Spiral width ≥ 26 in (660 mm). Spiral kind is not in the v2 stair enum; value is recorded only. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "spiralTreadMin": {
+      "value": 171,
+      "unit": "mm",
+      "clause": "R311.7.10.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Spiral tread ≥ 6¾ in (171 mm) at the walkline. Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "spiralRiserMax": {
+      "value": 241,
+      "unit": "mm",
+      "clause": "R311.7.10.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Spiral riser ≤ 9½ in (241 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    },
+    "spiralHeadroom": {
+      "value": 1982,
+      "unit": "mm",
+      "clause": "R311.7.10.1",
+      "source": "2021 IRC",
+      "url": "https://www.viewrail.com/wp-content/uploads/2025/04/2021-International-Residential-Code-Visual-Interpretation.pdf",
+      "verified": true,
+      "note": "Spiral headroom ≥ 6 ft 6 in (1982 mm). Verified against SMA verbatim reproduction of 2021 IRC text; primary ICC page not machine-readable."
+    }
+  }
+}

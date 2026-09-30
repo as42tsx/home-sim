@@ -1,0 +1,103 @@
+/* Home Sim 设计 Token v0.1 — Luna 2026-09-30
+   气质：暖米色纸面 + 轻松游戏感。文字对比度均 ≥ 4.5:1（已算），非文字图形 ≥ 3:1。
+   只用系统字体；不依赖位图。 */
+:root{
+  /* ── 纸面与面板 ── */
+  --paper-0:#f6f2ea;      /* 画布底 */
+  --paper-1:#fbf8f3;      /* 面板、弹窗 */
+  --paper-2:#efe9df;      /* 下沉区、输入框底、分段控件底 */
+  --paper-grid:#e7e0d3;   /* 2D 网格细线（1m 粗线用 --line-2） */
+  --line-1:#e3dccf;       /* 分隔线 */
+  --line-2:#cfc5b4;       /* 描边、控件边框 */
+
+  /* ── 墨色（文字） ── */
+  --ink-1:#2b2620;        /* 主文字 13.4:1 */
+  --ink-2:#5c5348;        /* 次文字 6.8:1 */
+  --ink-3:#71665a;        /* 辅助/占位 ≥4.6:1（含 paper-2） */
+  --ink-inverse:#fbf8f3;
+
+  /* ── 品牌强调（陶土色，继承参考 #b5653a 并压暗保证对比） ── */
+  --accent:#a1542c;       /* 按钮底/选中/文字链接；白字 5.5:1 */
+  --accent-hover:#8e4a27;
+  --accent-soft:#b5653a;  /* 大面积图形、图标高亮（非文字） */
+  --accent-tint:#f6e9df;  /* 选中行、选中卡片底 */
+
+  /* ── 语义色 ── */
+  --ok:#226d47;  --ok-tint:#dcefe3;     /* 合法预览、保存成功 */
+  --danger:#b3382a; --danger-tint:#f8dfd9; /* 非法预览、碰撞、拆除 */
+  --warn:#875b09; --warn-tint:#f6ead0;  /* 未闭合、存储提醒 */
+  --info:#2a6390; --info-tint:#dde9f3;  /* 吸附指示、测量线、提示 */
+
+  /* ── 2D 平面图 ── */
+  --wall:#3a332c;             /* 普通墙填充 */
+  --wall-bearing:#1f1b17;     /* 承重墙：深色 + 45° 斜线纹 */
+  --wall-drawing:#a1542c;     /* 正在画的墙 */
+  --wall-selected:#2a6390;    /* 选中墙描边 */
+  --wall-demolish:#b3382a;    /* 标记拆除：虚线 + 半透明 */
+  --snap:#2a6390;             /* 吸附点、正交引导线 */
+  --dim-line:#857a6c;         /* 尺寸标注线 */
+  --room-bedroom:#ecd8bb; --room-living:#f1e7d6; --room-kitchen:#e1e5e1;
+  --room-bath:#d8e4e8;    --room-balcony:#e8e2d0; --room-other:#ece6dc;
+
+  /* ── 夜景 UI（3D 夜景 / 系统深色） ── */
+  --night-bg:#1f1c24; --night-panel:#28242e; --night-line:#3a3542;
+  --night-ink-1:#ece6dc; --night-ink-2:#a89e90; --night-accent:#e39a6c;
+
+  /* ── 3D 背景 ── */
+  --sky-day-top:#f3eee6; --sky-day-bottom:#e4dccd;  /* 白天：暖纸色渐变，不用蓝天 */
+  --sky-night-top:#121724; --sky-night-bottom:#232033;
+  --ground-3d:#ddd4c4;
+
+  /* ── 字体与字号 ── */
+  --font-ui:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --font-num:ui-monospace,"SF Mono","Menlo","Consolas",monospace; /* 尺寸、面积、坐标 */
+  --fs-11:11px;  /* 2D 尺寸标注最小字号（缩放后不小于此） */
+  --fs-12:12px;  /* 状态栏、辅助说明 */
+  --fs-13:13px;  /* 面板正文、表单标签 */
+  --fs-14:14px;  /* 按钮、列表主文字 */
+  --fs-16:16px;  /* 面板标题、手机正文 */
+  --fs-20:20px;  /* 弹窗标题 */
+  --fs-28:28px;  /* 空状态大标题 */
+  --lh-tight:1.25; --lh-body:1.5;
+  --fw-regular:400; --fw-medium:500; --fw-bold:600;
+
+  /* ── 圆角 ── */
+  --r-xs:4px;   /* 标签、徽章 */
+  --r-sm:6px;   /* 输入框、小按钮 */
+  --r-md:10px;  /* 按钮组、卡片 */
+  --r-lg:14px;  /* 面板、弹窗 */
+  --r-xl:20px;  /* 手机底部抽屉顶部 */
+  --r-pill:999px; /* 长度气泡、toast、浮动操作条 */
+
+  /* ── 阴影（暖色投影，不用纯黑） ── */
+  --shadow-1:0 1px 2px rgba(58,40,24,.08);                              /* 卡片 */
+  --shadow-2:0 4px 12px rgba(58,40,24,.10),0 1px 3px rgba(58,40,24,.08); /* 浮层、气泡 */
+  --shadow-3:0 12px 32px rgba(58,40,24,.16),0 2px 6px rgba(58,40,24,.08);/* 弹窗、抽屉 */
+  --focus-ring:0 0 0 3px rgba(42,99,144,.45);                           /* 键盘焦点 */
+
+  /* ── 间距（4 基数） ── */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-12:48px;
+
+  /* ── 布局尺寸 ── */
+  --topbar-h:56px;          /* 桌面顶栏 */
+  --topbar-h-mobile:52px;   /* 手机顶栏（≤64，AC US-09） */
+  --toolrail-w:56px;        /* 左侧工具竖条 */
+  --sidepanel-w:272px;      /* 左侧库/工具设置 */
+  --inspector-w:304px;      /* 右侧属性面板 */
+  --statusbar-h:32px;
+  --tabbar-h:64px;          /* 手机底部 Tab（含安全区另加） */
+  --hit-min:44px;           /* 最小可点击尺寸 */
+
+  /* ── 动效 ── */
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+  --ease-in-out:cubic-bezier(.65,0,.35,1);
+  --ease-spring:cubic-bezier(.34,1.56,.64,1); /* 仅用于放下家具、气泡弹出 */
+  --dur-fast:120ms;   /* hover、按下 */
+  --dur-base:200ms;   /* 面板切换、吸附指示出现 */
+  --dur-slow:320ms;   /* 抽屉、弹窗 */
+  --dur-view:900ms;   /* 2D↔3D 过渡总时长 */
+  --z-canvas:0; --z-panel:10; --z-float:20; --z-drawer:30; --z-modal:40; --z-toast:50;
+}
+@media (prefers-reduced-motion: reduce){
+  :root{ --dur-fast:0ms; --dur-base:0ms; --dur-slow:0ms; --dur-view:200ms; }
+}

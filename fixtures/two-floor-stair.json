@@ -1,0 +1,611 @@
+{
+  "schemaVersion": 2,
+  "meta": {
+    "id": "plan-two-floor",
+    "name": "两层样例",
+    "createdAt": 1790726400000,
+    "updatedAt": 1790726400000,
+    "unit": "mm",
+    "displayUnit": "metric",
+    "codeset": "cn",
+    "template": null
+  },
+  "floors": [
+    {
+      "id": "f1",
+      "name": "1F",
+      "elevation": 0,
+      "height": 2900,
+      "slab": 200,
+      "ceiling": 2800,
+      "nodes": [
+        {
+          "id": "f1n1",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "f1n2",
+          "x": 4000,
+          "y": 0
+        },
+        {
+          "id": "f1n3",
+          "x": 8000,
+          "y": 0
+        },
+        {
+          "id": "f1n4",
+          "x": 0,
+          "y": 3000
+        },
+        {
+          "id": "f1n5",
+          "x": 4000,
+          "y": 3000
+        },
+        {
+          "id": "f1n6",
+          "x": 8000,
+          "y": 3000
+        },
+        {
+          "id": "f1n7",
+          "x": 0,
+          "y": 6000
+        },
+        {
+          "id": "f1n8",
+          "x": 4000,
+          "y": 6000
+        },
+        {
+          "id": "f1n9",
+          "x": 8000,
+          "y": 6000
+        }
+      ],
+      "walls": [
+        {
+          "id": "f1w1",
+          "a": "f1n1",
+          "b": "f1n2",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w2",
+          "a": "f1n2",
+          "b": "f1n3",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w3",
+          "a": "f1n3",
+          "b": "f1n6",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w4",
+          "a": "f1n6",
+          "b": "f1n9",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w5",
+          "a": "f1n9",
+          "b": "f1n8",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w6",
+          "a": "f1n8",
+          "b": "f1n7",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w7",
+          "a": "f1n7",
+          "b": "f1n4",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w8",
+          "a": "f1n4",
+          "b": "f1n1",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w9",
+          "a": "f1n2",
+          "b": "f1n5",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": false,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w10",
+          "a": "f1n4",
+          "b": "f1n5",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": false,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f1w11",
+          "a": "f1n5",
+          "b": "f1n6",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": false,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        }
+      ],
+      "openings": [
+        {
+          "id": "f1door",
+          "wall": "f1w6",
+          "t": 0.5,
+          "kind": "door",
+          "width": 900,
+          "height": 2100,
+          "sill": 0,
+          "hinge": "left",
+          "swing": "in",
+          "ext": {
+            "role": "entry",
+            "label": "入户门"
+          }
+        }
+      ],
+      "rooms": [
+        {
+          "id": "f1r1",
+          "name": "客厅",
+          "type": "living",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 2000,
+            "y": 1500
+          }
+        },
+        {
+          "id": "f1r2",
+          "name": "卧室",
+          "type": "bedroom",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 6000,
+            "y": 1500
+          }
+        },
+        {
+          "id": "f1r3",
+          "name": "餐厅",
+          "type": "dining",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 4000,
+            "y": 4500
+          }
+        }
+      ],
+      "furniture": [
+        {
+          "id": "f1sofa",
+          "type": "sofa",
+          "name": "沙发",
+          "cx": 2000,
+          "cy": 1500,
+          "z": 0,
+          "w": 2000,
+          "d": 900,
+          "rot": 0,
+          "color": "#c4a574"
+        }
+      ],
+      "voids": []
+    },
+    {
+      "id": "f2",
+      "name": "2F",
+      "elevation": 2900,
+      "height": 2900,
+      "slab": 200,
+      "ceiling": 2800,
+      "nodes": [
+        {
+          "id": "f2n1",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "f2n2",
+          "x": 4000,
+          "y": 0
+        },
+        {
+          "id": "f2n3",
+          "x": 8000,
+          "y": 0
+        },
+        {
+          "id": "f2n4",
+          "x": 0,
+          "y": 3000
+        },
+        {
+          "id": "f2n5",
+          "x": 4000,
+          "y": 3000
+        },
+        {
+          "id": "f2n6",
+          "x": 8000,
+          "y": 3000
+        },
+        {
+          "id": "f2n7",
+          "x": 0,
+          "y": 6000
+        },
+        {
+          "id": "f2n8",
+          "x": 4000,
+          "y": 6000
+        },
+        {
+          "id": "f2n9",
+          "x": 8000,
+          "y": 6000
+        }
+      ],
+      "walls": [
+        {
+          "id": "f2w1",
+          "a": "f2n1",
+          "b": "f2n2",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w2",
+          "a": "f2n2",
+          "b": "f2n3",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w3",
+          "a": "f2n3",
+          "b": "f2n6",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w4",
+          "a": "f2n6",
+          "b": "f2n9",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w5",
+          "a": "f2n9",
+          "b": "f2n8",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w6",
+          "a": "f2n8",
+          "b": "f2n7",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w7",
+          "a": "f2n7",
+          "b": "f2n4",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w8",
+          "a": "f2n4",
+          "b": "f2n1",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w10",
+          "a": "f2n4",
+          "b": "f2n5",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": false,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "f2w11",
+          "a": "f2n5",
+          "b": "f2n6",
+          "thickness": 200,
+          "height": null,
+          "bearing": false,
+          "exterior": false,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        }
+      ],
+      "openings": [
+        {
+          "id": "f2win",
+          "wall": "f2w1",
+          "t": 0.5,
+          "kind": "window",
+          "width": 1500,
+          "height": 1500,
+          "sill": 900,
+          "hinge": "left",
+          "swing": "in"
+        }
+      ],
+      "rooms": [
+        {
+          "id": "f2r1",
+          "name": "主卧",
+          "type": "bedroom",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 4000,
+            "y": 1500
+          }
+        },
+        {
+          "id": "f2r2",
+          "name": "次卧",
+          "type": "bedroom",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 4000,
+            "y": 4500
+          }
+        }
+      ],
+      "furniture": [
+        {
+          "id": "f2bed",
+          "type": "bed",
+          "name": "床",
+          "cx": 4000,
+          "cy": 1500,
+          "z": 0,
+          "w": 1800,
+          "d": 2000,
+          "h": 450,
+          "rot": 0,
+          "color": "#d8c3a5"
+        }
+      ],
+      "voids": [
+        {
+          "id": "v-double",
+          "poly": [
+            [
+              5000,
+              4000
+            ],
+            [
+              7000,
+              4000
+            ],
+            [
+              7000,
+              5500
+            ],
+            [
+              5000,
+              5500
+            ]
+          ],
+          "reason": "double-height"
+        }
+      ]
+    }
+  ],
+  "stairs": [
+    {
+      "id": "st1",
+      "kind": "straight",
+      "from": "f1",
+      "to": "f2",
+      "x": 2000,
+      "y": 4500,
+      "rot": 0,
+      "width": 900,
+      "tread": 260,
+      "maxRiser": 200,
+      "handrail": "both",
+      "opening": "auto"
+    }
+  ],
+  "markers": {
+    "walkStart": {
+      "floor": "f1",
+      "x": 1000,
+      "y": 1500,
+      "yaw": 0
+    }
+  }
+}

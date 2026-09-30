@@ -1,0 +1,22 @@
+{
+  "templates": [
+    {
+      "id": "apt-1br",
+      "name": "一居室",
+      "file": "apt-1br.json",
+      "area": 39
+    },
+    {
+      "id": "apt-2br",
+      "name": "两居室",
+      "file": "apt-2br.json",
+      "area": 63
+    },
+    {
+      "id": "apt-3br",
+      "name": "三居室",
+      "file": "apt-3br.json",
+      "area": 88.9
+    }
+  ]
+}

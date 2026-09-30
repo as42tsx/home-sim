@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://as42tsx.github.io/home-sim/schema/template.v2.schema.json",
+  "title": "Home Sim template v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "id", "name", "source", "areaBasis", "expected", "plan"],
+  "properties": {
+    "kind": { "const": "home-sim-template" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "source": { "type": "string" },
+    "areaBasis": { "const": "centerline" },
+    "expected": { "$ref": "#/$defs/expected" },
+    "plan": { "$ref": "https://as42tsx.github.io/home-sim/schema/plan.v2.schema.json" }
+  },
+  "$defs": {
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["areaBasis", "rooms", "roomCount", "interiorTotalM2"],
+      "properties": {
+        "areaBasis": { "const": "centerline" },
+        "roomCount": { "type": "integer", "minimum": 0 },
+        "interiorTotalM2": { "type": "number" },
+        "rooms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "x", "y", "w", "d", "areaM2"],
+            "properties": {
+              "name": { "type": "string" },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "w": { "type": "number" },
+              "d": { "type": "number" },
+              "areaM2": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

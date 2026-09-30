@@ -1,0 +1,37 @@
+{
+  "note": "Hand arithmetic for fixtures/two-floor-stair.json. Every wall is 200 mm thick, so each room face insets 100 mm. Wall footprints stop at the centreline endpoints, so the slab outline misses four 100×100 outside corners.",
+  "floors": {
+    "f1": {
+      "roomCount": 3,
+      "rooms": [
+        { "name": "客厅", "centerlineArea": 12000000, "netArea": 10640000 },
+        { "name": "卧室", "centerlineArea": 12000000, "netArea": 10640000 },
+        { "name": "餐厅", "centerlineArea": 24000000, "netArea": 21840000 }
+      ]
+    },
+    "f2": {
+      "roomCount": 2,
+      "rooms": [
+        { "name": "主卧", "centerlineArea": 24000000, "netArea": 21840000 },
+        { "name": "次卧", "centerlineArea": 24000000, "netArea": 21840000 }
+      ]
+    }
+  },
+  "stair": {
+    "n": 15,
+    "riser": 193.33333333333334,
+    "treads": 14,
+    "runLength": 3640,
+    "footprintArea": 3276000,
+    "arithmetic": "rise = 2900; n = ceil(2900/200) = 15; riser = 2900/15; treads = 14; run = 14×260 = 3640; footprint = 3640×900 = 3276000"
+  },
+  "slab": {
+    "f1": { "outlineArea": 50800000, "openingArea": 0, "slabArea": 50800000 },
+    "f2": {
+      "outlineArea": 50800000,
+      "openingArea": 5700000,
+      "slabArea": 45100000,
+      "arithmetic": "outline = (8000+200)×(6000+200) − 4×100×100 = 50840000−40000 = 50800000; stair 3276000; void 2000×1500 = 3000000; overlap 640×900 = 576000; union = 3276000+3000000−576000 = 5700000; slab = 50800000−5700000 = 45100000"
+    }
+  }
+}

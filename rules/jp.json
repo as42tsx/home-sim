@@ -1,0 +1,114 @@
+{
+  "id": "jp",
+  "title": "建築基準法施行令 階段",
+  "verifiedOn": "2026-09-30",
+  "disclaimer": "設計上の目安であり、適合証明ではない。条文は e-Gov の原文を正とする。",
+  "sources": [
+    {
+      "name": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "note": "第23条から第25条。e-Gov 法令 API の本文で照合。"
+    }
+  ],
+  "limits": {
+    "riserMax": {
+      "value": 230,
+      "unit": "mm",
+      "clause": "施行令第23条第1項ただし書",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "住宅の階段（共同住宅の共用の階段を除く）の蹴上げは 23 cm 以下。"
+    },
+    "treadMin": {
+      "value": 150,
+      "unit": "mm",
+      "clause": "施行令第23条第1項ただし書",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "住宅の階段（共同住宅の共用の階段を除く）の踏面は 15 cm 以上。"
+    },
+    "widthMin": {
+      "value": 750,
+      "unit": "mm",
+      "clause": "施行令第23条第1項表(四)",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "階段及びその踊場の幅は 75 cm 以上。"
+    },
+    "winderMeasureOffset": {
+      "value": 300,
+      "unit": "mm",
+      "clause": "施行令第23条第2項",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "回り階段の踏面は、狭い方の端から 30 cm の位置で測る。"
+    },
+    "handrailWidthCredit": {
+      "value": 100,
+      "unit": "mm",
+      "clause": "施行令第23条第3項",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "高さ 50 cm 以下の手すり等は、幅 10 cm を限度として幅の算定上ないものとみなす。"
+    },
+    "handrailCreditHeightMax": {
+      "value": 500,
+      "unit": "mm",
+      "clause": "施行令第23条第3項",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "幅の算定から除ける手すり等の高さの上限は 50 cm。"
+    },
+    "landingIntervalRise": {
+      "value": 4000,
+      "unit": "mm",
+      "clause": "施行令第24条第1項",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "表(一)(二)以外の階段で高さが 4 m を超えるものは、高さ 4 m 以内ごとに踊場を設ける。"
+    },
+    "straightLandingMin": {
+      "value": 1200,
+      "unit": "mm",
+      "clause": "施行令第24条第2項",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "直階段の踊場の踏幅は 1.2 m 以上。"
+    },
+    "landingTurnMin": {
+      "value": 750,
+      "unit": "mm",
+      "clause": "施行令第23条第1項表(四)",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "踊場の幅は階段と同じく 75 cm 以上。回り階段の追加の踏幅規定は第24条第2項（直階段）には含まれない。折返し時は max(階段幅, 750) で見る。"
+    },
+    "handrailRequired": {
+      "value": null,
+      "unit": null,
+      "clause": "施行令第25条",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": true,
+      "note": "階段には手すりを設けなければならない。第4項により高さ 1 m 以下の部分は適用除外。数値の下限は条文にないため value は null。存在の注意だけ出す。"
+    },
+    "headroom": {
+      "value": null,
+      "unit": null,
+      "clause": "施行令第23条～第27条",
+      "source": "建築基準法施行令（昭和25年政令第338号）",
+      "url": "https://laws.e-gov.go.jp/api/1/lawdata/325CO0000000338",
+      "verified": false,
+      "note": "no statutory stair headroom in 令23–27; do not invent"
+    }
+  }
+}

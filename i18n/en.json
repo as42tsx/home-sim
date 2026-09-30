@@ -1,0 +1,13 @@
+{
+  "app.title": "Home Sim",
+  "shell.ready": "Home Sim · skeleton ready",
+  "shell.topbar": "Top bar",
+  "shell.tools": "Tools",
+  "shell.side": "Library",
+  "shell.inspector": "Inspector",
+  "shell.status": "Status",
+  "shell.tabs": "Tabs",
+  "shell.floors": "Floors",
+  "shell.loading": "Loading modules…",
+  "shell.noscript": "Enable JavaScript to use Home Sim."
+}

@@ -1,0 +1,622 @@
+{
+  "kind": "home-sim-template",
+  "id": "apt-1br",
+  "name": "一居室",
+  "source": "Luna 模板户型-原创-v1.1（2026-09-30）",
+  "areaBasis": "centerline",
+  "expected": {
+    "areaBasis": "centerline",
+    "rooms": [
+      {
+        "name": "卧室",
+        "x": 0,
+        "y": 0,
+        "w": 3300,
+        "d": 4200,
+        "areaM2": 13.9
+      },
+      {
+        "name": "卫生间",
+        "x": 3300,
+        "y": 0,
+        "w": 2100,
+        "d": 1800,
+        "areaM2": 3.8
+      },
+      {
+        "name": "厨房",
+        "x": 5400,
+        "y": 0,
+        "w": 1800,
+        "d": 1800,
+        "areaM2": 3.2
+      },
+      {
+        "name": "客餐厅",
+        "x": 3300,
+        "y": 1800,
+        "w": 3900,
+        "d": 3600,
+        "areaM2": 14
+      },
+      {
+        "name": "玄关过道",
+        "x": 0,
+        "y": 4200,
+        "w": 3300,
+        "d": 1200,
+        "areaM2": 4
+      },
+      {
+        "name": "阳台",
+        "x": 0,
+        "y": 5400,
+        "w": 7200,
+        "d": 1200,
+        "areaM2": 8.6
+      }
+    ],
+    "roomCount": 6,
+    "interiorTotalM2": 39
+  },
+  "plan": {
+    "schemaVersion": 2,
+    "meta": {
+      "id": "tpl-apt-1br",
+      "name": "一居室",
+      "createdAt": 1790726400000,
+      "updatedAt": 1790726400000,
+      "unit": "mm",
+      "displayUnit": "metric",
+      "codeset": "cn",
+      "template": "apt-1br"
+    },
+    "floors": [
+      {
+        "id": "f1",
+        "name": "1F",
+        "elevation": 0,
+        "height": 2800,
+        "slab": 200,
+        "ceiling": 2800,
+        "nodes": [
+          {
+            "id": "n1",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "id": "n2",
+            "x": 3300,
+            "y": 0
+          },
+          {
+            "id": "n3",
+            "x": 5400,
+            "y": 0
+          },
+          {
+            "id": "n4",
+            "x": 7200,
+            "y": 0
+          },
+          {
+            "id": "n5",
+            "x": 3300,
+            "y": 1800
+          },
+          {
+            "id": "n6",
+            "x": 5400,
+            "y": 1800
+          },
+          {
+            "id": "n7",
+            "x": 7200,
+            "y": 1800
+          },
+          {
+            "id": "n8",
+            "x": 0,
+            "y": 4200
+          },
+          {
+            "id": "n9",
+            "x": 3300,
+            "y": 4200
+          },
+          {
+            "id": "n10",
+            "x": 0,
+            "y": 5400
+          },
+          {
+            "id": "n11",
+            "x": 3300,
+            "y": 5400
+          },
+          {
+            "id": "n12",
+            "x": 7200,
+            "y": 5400
+          },
+          {
+            "id": "n13",
+            "x": 0,
+            "y": 6600
+          },
+          {
+            "id": "n14",
+            "x": 7200,
+            "y": 6600
+          }
+        ],
+        "walls": [
+          {
+            "id": "w1",
+            "a": "n1",
+            "b": "n2",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w2",
+            "a": "n1",
+            "b": "n8",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w3",
+            "a": "n2",
+            "b": "n3",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w4",
+            "a": "n2",
+            "b": "n5",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w5",
+            "a": "n3",
+            "b": "n4",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w6",
+            "a": "n3",
+            "b": "n6",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w7",
+            "a": "n4",
+            "b": "n7",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w8",
+            "a": "n5",
+            "b": "n6",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w9",
+            "a": "n5",
+            "b": "n9",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w10",
+            "a": "n6",
+            "b": "n7",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w11",
+            "a": "n7",
+            "b": "n12",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w12",
+            "a": "n8",
+            "b": "n9",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w13",
+            "a": "n8",
+            "b": "n10",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w14",
+            "a": "n9",
+            "b": "n11",
+            "thickness": 120,
+            "height": null,
+            "bearing": false,
+            "exterior": false,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w15",
+            "a": "n10",
+            "b": "n11",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w16",
+            "a": "n10",
+            "b": "n13",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w17",
+            "a": "n11",
+            "b": "n12",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w18",
+            "a": "n12",
+            "b": "n14",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w19",
+            "a": "n13",
+            "b": "n14",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          }
+        ],
+        "openings": [
+          {
+            "id": "apt1-entry",
+            "wall": "w13",
+            "t": 0.5,
+            "kind": "door",
+            "width": 1000,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "entry",
+              "label": "入户门"
+            }
+          },
+          {
+            "id": "apt1-bed-door",
+            "wall": "w12",
+            "t": 0.5,
+            "kind": "door",
+            "width": 900,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "interior",
+              "label": "卧室门"
+            }
+          },
+          {
+            "id": "apt1-bath-door",
+            "wall": "w8",
+            "t": 0.5,
+            "kind": "door",
+            "width": 800,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "interior",
+              "label": "卫生间门"
+            }
+          },
+          {
+            "id": "apt1-kit-door",
+            "wall": "w10",
+            "t": 0.5,
+            "kind": "door",
+            "width": 800,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "interior",
+              "label": "厨房门"
+            }
+          },
+          {
+            "id": "apt1-slide",
+            "wall": "w17",
+            "t": 0.5,
+            "kind": "slide",
+            "width": 2400,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "slide",
+              "label": "阳台推拉门"
+            }
+          },
+          {
+            "id": "apt1-bed-win",
+            "wall": "w1",
+            "t": 0.5,
+            "kind": "window",
+            "width": 1800,
+            "height": 1500,
+            "sill": 900,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "window",
+              "label": "卧室窗"
+            }
+          },
+          {
+            "id": "apt1-ldk-win",
+            "wall": "w11",
+            "t": 0.5,
+            "kind": "window",
+            "width": 1500,
+            "height": 1500,
+            "sill": 900,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "window",
+              "label": "客餐厅窗"
+            }
+          }
+        ],
+        "rooms": [
+          {
+            "id": "r1",
+            "name": "卧室",
+            "type": "bedroom",
+            "floor": "wood",
+            "floorOffset": 0,
+            "seed": {
+              "x": 1650,
+              "y": 2100
+            }
+          },
+          {
+            "id": "r2",
+            "name": "卫生间",
+            "type": "bath",
+            "floor": "tile",
+            "floorOffset": 0,
+            "seed": {
+              "x": 4350,
+              "y": 900
+            }
+          },
+          {
+            "id": "r3",
+            "name": "厨房",
+            "type": "kitchen",
+            "floor": "tile",
+            "floorOffset": 0,
+            "seed": {
+              "x": 6300,
+              "y": 900
+            }
+          },
+          {
+            "id": "r4",
+            "name": "客餐厅",
+            "type": "ldk",
+            "floor": "wood",
+            "floorOffset": 0,
+            "seed": {
+              "x": 5250,
+              "y": 3600
+            }
+          },
+          {
+            "id": "r5",
+            "name": "玄关过道",
+            "type": "entry",
+            "floor": "stone",
+            "floorOffset": 0,
+            "seed": {
+              "x": 1650,
+              "y": 4800
+            }
+          },
+          {
+            "id": "r6",
+            "name": "阳台",
+            "type": "balcony",
+            "floor": "tile",
+            "floorOffset": 0,
+            "seed": {
+              "x": 3600,
+              "y": 6000
+            }
+          }
+        ],
+        "furniture": [],
+        "voids": []
+      }
+    ],
+    "stairs": []
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 2,
+  "meta": {
+    "id": "plan-single",
+    "name": "单间示例",
+    "createdAt": 1790726400000,
+    "updatedAt": 1790726400000,
+    "unit": "mm",
+    "displayUnit": "metric",
+    "codeset": "cn",
+    "template": null
+  },
+  "floors": [
+    {
+      "id": "f1",
+      "name": "1F",
+      "elevation": 0,
+      "height": 2900,
+      "slab": 200,
+      "ceiling": 2800,
+      "nodes": [
+        {
+          "id": "a",
+          "x": 0,
+          "y": 0
+        },
+        {
+          "id": "b",
+          "x": 4000,
+          "y": 0
+        },
+        {
+          "id": "c",
+          "x": 4000,
+          "y": 3000
+        },
+        {
+          "id": "d",
+          "x": 0,
+          "y": 3000
+        }
+      ],
+      "walls": [
+        {
+          "id": "n",
+          "a": "missing",
+          "b": "b",
+          "thickness": 240,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "e",
+          "a": "b",
+          "b": "c",
+          "thickness": 240,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "s",
+          "a": "c",
+          "b": "d",
+          "thickness": 240,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        },
+        {
+          "id": "w",
+          "a": "d",
+          "b": "a",
+          "thickness": 240,
+          "height": null,
+          "bearing": false,
+          "exterior": true,
+          "demolished": false,
+          "virtual": false,
+          "finish": {
+            "left": "paint-white",
+            "right": "paint-white"
+          }
+        }
+      ],
+      "openings": [
+        {
+          "id": "door1",
+          "wall": "s",
+          "t": 0.5,
+          "kind": "door",
+          "width": 900,
+          "height": 2100,
+          "sill": 0,
+          "hinge": "left",
+          "swing": "in"
+        }
+      ],
+      "rooms": [
+        {
+          "id": "room1",
+          "name": "客厅",
+          "type": "living",
+          "floor": "wood",
+          "floorOffset": 0,
+          "seed": {
+            "x": 2000,
+            "y": 1500
+          }
+        }
+      ],
+      "furniture": [],
+      "voids": []
+    }
+  ],
+  "stairs": []
+}

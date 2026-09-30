@@ -1,0 +1,169 @@
+/* Shell grid. Sizes come only from styles/tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-columns: var(--toolrail-w) var(--sidepanel-w) minmax(0, 1fr) var(--inspector-w);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--statusbar-h);
+  grid-template-areas:
+    "topbar topbar topbar topbar"
+    "tools side canvas inspector"
+    "status status status status";
+  background: var(--paper-0);
+  color: var(--ink-1);
+  font-family: var(--font-ui);
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+}
+
+.topbar {
+  grid-area: topbar;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  background: var(--paper-1);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.toolrail {
+  grid-area: tools;
+  width: var(--toolrail-w);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--sp-3);
+  background: var(--paper-1);
+  border-right: 1px solid var(--line-1);
+}
+
+.sidepanel {
+  grid-area: side;
+  width: var(--sidepanel-w);
+  padding: var(--sp-3);
+  background: var(--paper-1);
+  border-right: 1px solid var(--line-1);
+}
+
+.canvas {
+  grid-area: canvas;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper-0);
+}
+
+.inspector {
+  grid-area: inspector;
+  width: var(--inspector-w);
+  padding: var(--sp-3);
+  background: var(--paper-1);
+  border-left: 1px solid var(--line-1);
+}
+
+.statusbar {
+  grid-area: status;
+  height: var(--statusbar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
+  background: var(--paper-1);
+  border-top: 1px solid var(--line-1);
+  font-size: var(--fs-12);
+}
+
+.tabbar {
+  display: none;
+}
+
+.region-label {
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+}
+
+.ready-card {
+  max-width: 28rem;
+  padding: var(--sp-6);
+  background: var(--paper-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  text-align: center;
+}
+
+.ready-card h1 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-20);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+.ready-card p {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--font-num);
+  font-size: var(--fs-13);
+}
+
+html[data-app="error"] .ready-card p {
+  color: var(--danger);
+}
+
+.floor-switcher {
+  position: absolute;
+  left: var(--sp-4);
+  bottom: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--paper-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-pill);
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+  box-shadow: var(--shadow-1);
+}
+
+@media (max-width: 599px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--topbar-h-mobile) minmax(0, 1fr) var(--tabbar-h);
+    grid-template-areas:
+      "topbar"
+      "canvas"
+      "tabs";
+  }
+
+  .topbar {
+    height: var(--topbar-h-mobile);
+  }
+
+  .toolrail,
+  .sidepanel,
+  .inspector,
+  .statusbar {
+    display: none;
+  }
+
+  .tabbar {
+    grid-area: tabs;
+    height: var(--tabbar-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper-1);
+    border-top: 1px solid var(--line-1);
+  }
+}

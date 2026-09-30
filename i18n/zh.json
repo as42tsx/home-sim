@@ -1,0 +1,13 @@
+{
+  "app.title": "家装模拟器",
+  "shell.ready": "家装模拟器 · 骨架已就绪",
+  "shell.topbar": "顶栏",
+  "shell.tools": "工具",
+  "shell.side": "侧栏",
+  "shell.inspector": "属性",
+  "shell.status": "状态",
+  "shell.tabs": "标签",
+  "shell.floors": "楼层",
+  "shell.loading": "正在加载模块…",
+  "shell.noscript": "请启用 JavaScript 后再使用家装模拟器。"
+}

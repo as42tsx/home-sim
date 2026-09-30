@@ -577,13 +577,57 @@ select:focus-visible {
 }
 
 @media (max-width: 599px) {
+  .topbar .brand,
   .topbar .seg,
-  .topbar [data-action="undo"],
-  .topbar [data-action="redo"],
-  .topbar [data-action="share"],
+  .topbar > [data-action="share"],
   .topbar .menu-wrap,
-  .topbar [data-action="lang"] {
+  .topbar [data-action="lang"],
+  .topbar [data-action="view3d"],
+  .topbar .inspector-toggle {
     display: none;
+  }
+
+  .topbar .name-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .topbar .name-input {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .topbar .icon-btn {
+    width: 44px;
+    height: 44px;
+    flex: none;
+  }
+
+  body[data-mode="plan"]:not(.is-readonly):not(.is-picker) .toolrail {
+    display: flex;
+    position: fixed;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: var(--z-float);
+    width: auto;
+    height: auto;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    background: var(--paper-1);
+  }
+
+  body[data-mode="plan"]:not(.is-readonly):not(.is-picker) .toolrail [data-tool="room"],
+  body[data-mode="plan"]:not(.is-readonly):not(.is-picker) .toolrail [data-tool="measure"],
+  body[data-mode="plan"]:not(.is-readonly):not(.is-picker) .toolrail [data-tool="pan"],
+  body[data-mode="plan"]:not(.is-readonly):not(.is-picker) .toolrail [data-tool="library"] {
+    display: none !important;
   }
 }
 
@@ -830,6 +874,194 @@ select:focus-visible {
 .tabbar button.is-on {
   background: var(--accent-tint);
   color: var(--accent);
+}
+
+.menu.up {
+  top: auto;
+  bottom: calc(100% + var(--sp-1));
+  left: auto;
+  right: 0;
+  min-width: 200px;
+}
+
+.sheet {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-panel);
+  height: var(--sheet-h, 64px);
+  max-height: 100%;
+  flex-direction: column;
+  background: var(--paper-1);
+  border-top: 1px solid var(--line-1);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+body[data-sheet="0"] { --sheet-h: 64px; }
+body[data-sheet="1"] { --sheet-h: min(330px, 100%); }
+body[data-sheet="2"] { --sheet-h: 100%; }
+
+.sheet-handle {
+  flex: none;
+  height: 20px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.sheet-handle::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  background: var(--line-2);
+}
+
+.sheet-tabs {
+  flex: none;
+  display: flex;
+  height: 36px;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.sheet-tabs button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.sheet-tabs button.is-on {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.sheet-pages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.sheet-page {
+  padding: var(--sp-3);
+}
+
+.hud3d {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: var(--z-float);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  max-width: calc(100% - 24px);
+}
+
+.hud3d .btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--ink-inverse);
+}
+
+.readonly-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-float);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--info-tint);
+  color: var(--ink-1);
+  border-bottom: 1px solid var(--info);
+  font-size: var(--fs-13);
+}
+
+body.is-readonly .hud3d {
+  top: 48px;
+}
+
+.fab {
+  position: fixed;
+  z-index: var(--z-float);
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--ink-1);
+  color: var(--ink-inverse);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+}
+
+.fab button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-11);
+}
+
+.share-link {
+  width: 100%;
+  height: 36px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  font-family: var(--font-num);
+  font-size: var(--fs-12);
+  padding: 0 var(--sp-2);
+}
+
+.help-list {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.help-list li {
+  margin: var(--sp-2) 0;
+}
+
+#view3d-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+@media (max-width: 899px) {
+  .sheet { display: flex; }
+}
+
+@media (min-width: 600px) {
+  .fab { display: none !important; }
+}
+
+body[data-mode="view3d"] .sheet,
+body.is-readonly[data-sheet="0"] .sheet,
+body.is-picker .sheet,
+body.is-picker .fab {
+  display: none !important;
+}
+
+@media (max-width: 599px) {
+  .tabbar > button {
+    flex: 1;
+    min-height: var(--hit-min);
+    height: 44px;
+  }
 }
 
 .plan-svg .room-fill {

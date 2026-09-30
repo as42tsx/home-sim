@@ -123,8 +123,7 @@ body {
   font-size: var(--fs-13);
 }
 
-/* 900–1199: inspector becomes a collapsible overlay. Below 900 stays on the grid
-   (narrower phones are a later layout). */
+/* 900–1199: inspector becomes a collapsible overlay. */
 @media (max-width: 1199px) and (min-width: 900px) {
   body {
     grid-template-columns: var(--toolrail-w) var(--sidepanel-w) minmax(0, 1fr);
@@ -150,6 +149,22 @@ body {
   }
 }
 
+/* 600–899: keep the tool rail; library and inspector move into the bottom drawer. */
+@media (max-width: 899px) and (min-width: 600px) {
+  body {
+    grid-template-columns: var(--toolrail-w) minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar"
+      "tools canvas"
+      "status status";
+  }
+
+  .sidepanel,
+  .inspector {
+    display: none;
+  }
+}
+
 html[data-app="error"] .ready-card p {
   color: var(--danger);
 }
@@ -170,7 +185,7 @@ html[data-app="error"] .ready-card p {
 @media (max-width: 599px) {
   body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--topbar-h-mobile) minmax(0, 1fr) var(--tabbar-h);
+    grid-template-rows: var(--topbar-h-mobile) minmax(0, 1fr) calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
     grid-template-areas:
       "topbar"
       "canvas"
@@ -179,6 +194,7 @@ html[data-app="error"] .ready-card p {
 
   .topbar {
     height: var(--topbar-h-mobile);
+    min-width: 0;
   }
 
   .toolrail,
@@ -190,10 +206,13 @@ html[data-app="error"] .ready-card p {
 
   .tabbar {
     grid-area: tabs;
-    height: var(--tabbar-h);
+    position: relative;
+    box-sizing: border-box;
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-around;
     background: var(--paper-1);
     border-top: 1px solid var(--line-1);
   }

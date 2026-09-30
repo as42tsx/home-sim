@@ -2,7 +2,7 @@
   "kind": "home-sim-template",
   "id": "apt-2br",
   "name": "两居室",
-  "source": "Luna 模板户型-原创-v1.1（2026-09-30）",
+  "source": "Luna 模板户型-原创-v1.2（2026-09-30）",
   "areaBasis": "centerline",
   "expected": {
     "areaBasis": "centerline",
@@ -45,7 +45,7 @@
         "y": 0,
         "w": 1800,
         "d": 3900,
-        "areaM2": 7
+        "areaM2": 7.0
       },
       {
         "name": "客餐厅",
@@ -65,7 +65,7 @@
       }
     ],
     "roomCount": 7,
-    "interiorTotalM2": 63
+    "interiorTotalM2": 63.3
   },
   "plan": {
     "schemaVersion": 2,
@@ -452,7 +452,7 @@
             "thickness": 240,
             "height": null,
             "bearing": false,
-            "exterior": true,
+            "exterior": false,
             "demolished": false,
             "virtual": false,
             "finish": {
@@ -538,7 +538,7 @@
             }
           },
           {
-            "id": "apt2-master-door",
+            "id": "apt2-mbed-door",
             "wall": "w13",
             "t": 0.5,
             "kind": "door",
@@ -553,7 +553,7 @@
             }
           },
           {
-            "id": "apt2-second-door",
+            "id": "apt2-bed2-door",
             "wall": "w15",
             "t": 0.5,
             "kind": "door",
@@ -613,7 +613,7 @@
             }
           },
           {
-            "id": "apt2-master-win",
+            "id": "apt2-mbed-win",
             "wall": "w1",
             "t": 0.5,
             "kind": "window",
@@ -628,7 +628,7 @@
             }
           },
           {
-            "id": "apt2-second-win",
+            "id": "apt2-bed2-win",
             "wall": "w3",
             "t": 0.5,
             "kind": "window",

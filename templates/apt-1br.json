@@ -2,7 +2,7 @@
   "kind": "home-sim-template",
   "id": "apt-1br",
   "name": "一居室",
-  "source": "Luna 模板户型-原创-v1.1（2026-09-30）",
+  "source": "Luna 模板户型-原创-v1.2（2026-09-30）",
   "areaBasis": "centerline",
   "expected": {
     "areaBasis": "centerline",
@@ -12,8 +12,8 @@
         "x": 0,
         "y": 0,
         "w": 3300,
-        "d": 4200,
-        "areaM2": 13.9
+        "d": 3900,
+        "areaM2": 12.9
       },
       {
         "name": "卫生间",
@@ -37,15 +37,15 @@
         "y": 1800,
         "w": 3900,
         "d": 3600,
-        "areaM2": 14
+        "areaM2": 14.0
       },
       {
-        "name": "玄关过道",
+        "name": "玄关",
         "x": 0,
-        "y": 4200,
+        "y": 3900,
         "w": 3300,
-        "d": 1200,
-        "areaM2": 4
+        "d": 1500,
+        "areaM2": 5.0
       },
       {
         "name": "阳台",
@@ -57,7 +57,7 @@
       }
     ],
     "roomCount": 6,
-    "interiorTotalM2": 39
+    "interiorTotalM2": 38.9
   },
   "plan": {
     "schemaVersion": 2,
@@ -118,12 +118,12 @@
           {
             "id": "n8",
             "x": 0,
-            "y": 4200
+            "y": 3900
           },
           {
             "id": "n9",
             "x": 3300,
-            "y": 4200
+            "y": 3900
           },
           {
             "id": "n10",
@@ -356,7 +356,7 @@
             "bearing": false,
             "exterior": false,
             "demolished": false,
-            "virtual": false,
+            "virtual": true,
             "finish": {
               "left": "paint-white",
               "right": "paint-white"
@@ -369,7 +369,7 @@
             "thickness": 240,
             "height": null,
             "bearing": false,
-            "exterior": true,
+            "exterior": false,
             "demolished": false,
             "virtual": false,
             "finish": {
@@ -399,7 +399,7 @@
             "thickness": 240,
             "height": null,
             "bearing": false,
-            "exterior": true,
+            "exterior": false,
             "demolished": false,
             "virtual": false,
             "finish": {
@@ -554,7 +554,7 @@
             "floorOffset": 0,
             "seed": {
               "x": 1650,
-              "y": 2100
+              "y": 1950
             }
           },
           {
@@ -592,13 +592,13 @@
           },
           {
             "id": "r5",
-            "name": "玄关过道",
+            "name": "玄关",
             "type": "entry",
             "floor": "stone",
             "floorOffset": 0,
             "seed": {
               "x": 1650,
-              "y": 4800
+              "y": 4650
             }
           },
           {

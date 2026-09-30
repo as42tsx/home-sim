@@ -2,7 +2,7 @@
   "kind": "home-sim-template",
   "id": "apt-3br",
   "name": "三居室",
-  "source": "Luna 模板户型-原创-v1.1（2026-09-30）",
+  "source": "Luna 模板户型-原创-v1.2（2026-09-30）",
   "areaBasis": "centerline",
   "expected": {
     "areaBasis": "centerline",
@@ -21,7 +21,7 @@
         "y": 0,
         "w": 1500,
         "d": 2700,
-        "areaM2": 4.1
+        "areaM2": 4.0
       },
       {
         "name": "过道",
@@ -29,7 +29,7 @@
         "y": 2700,
         "w": 1500,
         "d": 1500,
-        "areaM2": 2.3
+        "areaM2": 2.2
       },
       {
         "name": "次卧",
@@ -56,28 +56,28 @@
         "areaM2": 21.6
       },
       {
-        "name": "厨房",
+        "name": "餐厅",
         "x": 6000,
         "y": 4200,
-        "w": 2400,
-        "d": 2100,
-        "areaM2": 5
+        "w": 5400,
+        "d": 1800,
+        "areaM2": 9.7
       },
       {
         "name": "公卫",
         "x": 6000,
-        "y": 6300,
+        "y": 6000,
         "w": 2400,
-        "d": 1500,
-        "areaM2": 3.6
+        "d": 1800,
+        "areaM2": 4.3
       },
       {
-        "name": "餐厅",
+        "name": "厨房",
         "x": 8400,
-        "y": 4200,
+        "y": 6000,
         "w": 3000,
-        "d": 3600,
-        "areaM2": 10.8
+        "d": 1800,
+        "areaM2": 5.4
       },
       {
         "name": "阳台",
@@ -85,7 +85,7 @@
         "y": 7800,
         "w": 6000,
         "d": 1500,
-        "areaM2": 9
+        "areaM2": 9.0
       }
     ],
     "roomCount": 10,
@@ -180,40 +180,45 @@
           {
             "id": "n14",
             "x": 6000,
-            "y": 6300
+            "y": 6000
           },
           {
             "id": "n15",
             "x": 8400,
-            "y": 6300
+            "y": 6000
           },
           {
             "id": "n16",
-            "x": 0,
-            "y": 7800
+            "x": 11400,
+            "y": 6000
           },
           {
             "id": "n17",
-            "x": 6000,
+            "x": 0,
             "y": 7800
           },
           {
             "id": "n18",
-            "x": 8400,
+            "x": 6000,
             "y": 7800
           },
           {
             "id": "n19",
-            "x": 11400,
+            "x": 8400,
             "y": 7800
           },
           {
             "id": "n20",
+            "x": 11400,
+            "y": 7800
+          },
+          {
+            "id": "n21",
             "x": 0,
             "y": 9300
           },
           {
-            "id": "n21",
+            "id": "n22",
             "x": 6000,
             "y": 9300
           }
@@ -417,7 +422,7 @@
           {
             "id": "w14",
             "a": "n8",
-            "b": "n16",
+            "b": "n17",
             "thickness": 240,
             "height": null,
             "bearing": false,
@@ -483,7 +488,7 @@
             "bearing": false,
             "exterior": false,
             "demolished": false,
-            "virtual": false,
+            "virtual": true,
             "finish": {
               "left": "paint-white",
               "right": "paint-white"
@@ -506,7 +511,22 @@
           },
           {
             "id": "w20",
-            "a": "n12",
+            "a": "n13",
+            "b": "n16",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w21",
+            "a": "n14",
             "b": "n15",
             "thickness": 120,
             "height": null,
@@ -520,24 +540,9 @@
             }
           },
           {
-            "id": "w21",
-            "a": "n13",
-            "b": "n19",
-            "thickness": 240,
-            "height": null,
-            "bearing": false,
-            "exterior": true,
-            "demolished": false,
-            "virtual": false,
-            "finish": {
-              "left": "paint-white",
-              "right": "paint-white"
-            }
-          },
-          {
             "id": "w22",
             "a": "n14",
-            "b": "n15",
+            "b": "n18",
             "thickness": 120,
             "height": null,
             "bearing": false,
@@ -551,8 +556,8 @@
           },
           {
             "id": "w23",
-            "a": "n14",
-            "b": "n17",
+            "a": "n15",
+            "b": "n16",
             "thickness": 120,
             "height": null,
             "bearing": false,
@@ -567,7 +572,7 @@
           {
             "id": "w24",
             "a": "n15",
-            "b": "n18",
+            "b": "n19",
             "thickness": 120,
             "height": null,
             "bearing": false,
@@ -582,21 +587,6 @@
           {
             "id": "w25",
             "a": "n16",
-            "b": "n17",
-            "thickness": 240,
-            "height": null,
-            "bearing": false,
-            "exterior": true,
-            "demolished": false,
-            "virtual": false,
-            "finish": {
-              "left": "paint-white",
-              "right": "paint-white"
-            }
-          },
-          {
-            "id": "w26",
-            "a": "n16",
             "b": "n20",
             "thickness": 240,
             "height": null,
@@ -610,13 +600,13 @@
             }
           },
           {
-            "id": "w27",
+            "id": "w26",
             "a": "n17",
             "b": "n18",
             "thickness": 240,
             "height": null,
             "bearing": false,
-            "exterior": true,
+            "exterior": false,
             "demolished": false,
             "virtual": false,
             "finish": {
@@ -625,7 +615,7 @@
             }
           },
           {
-            "id": "w28",
+            "id": "w27",
             "a": "n17",
             "b": "n21",
             "thickness": 240,
@@ -640,7 +630,7 @@
             }
           },
           {
-            "id": "w29",
+            "id": "w28",
             "a": "n18",
             "b": "n19",
             "thickness": 240,
@@ -655,9 +645,39 @@
             }
           },
           {
+            "id": "w29",
+            "a": "n18",
+            "b": "n22",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
             "id": "w30",
-            "a": "n20",
-            "b": "n21",
+            "a": "n19",
+            "b": "n20",
+            "thickness": 240,
+            "height": null,
+            "bearing": false,
+            "exterior": true,
+            "demolished": false,
+            "virtual": false,
+            "finish": {
+              "left": "paint-white",
+              "right": "paint-white"
+            }
+          },
+          {
+            "id": "w31",
+            "a": "n21",
+            "b": "n22",
             "thickness": 240,
             "height": null,
             "bearing": false,
@@ -673,7 +693,7 @@
         "openings": [
           {
             "id": "apt3-entry",
-            "wall": "w29",
+            "wall": "w20",
             "t": 0.5,
             "kind": "door",
             "width": 1000,
@@ -687,7 +707,7 @@
             }
           },
           {
-            "id": "apt3-master-door",
+            "id": "apt3-mbed-door",
             "wall": "w11",
             "t": 0.5,
             "kind": "door",
@@ -702,7 +722,7 @@
             }
           },
           {
-            "id": "apt3-ensuite-door",
+            "id": "apt3-mbath-door",
             "wall": "w4",
             "t": 0.5,
             "kind": "door",
@@ -717,7 +737,7 @@
             }
           },
           {
-            "id": "apt3-second-door",
+            "id": "apt3-bed2-door",
             "wall": "w12",
             "t": 0.5,
             "kind": "door",
@@ -732,7 +752,7 @@
             }
           },
           {
-            "id": "apt3-child-door",
+            "id": "apt3-kid-door",
             "wall": "w19",
             "t": 0.5,
             "kind": "door",
@@ -747,23 +767,8 @@
             }
           },
           {
-            "id": "apt3-kit-door",
-            "wall": "w20",
-            "t": 0.5,
-            "kind": "door",
-            "width": 800,
-            "height": 2100,
-            "sill": 0,
-            "hinge": "left",
-            "swing": "in",
-            "ext": {
-              "role": "interior",
-              "label": "厨房门"
-            }
-          },
-          {
             "id": "apt3-bath-door",
-            "wall": "w23",
+            "wall": "w21",
             "t": 0.5,
             "kind": "door",
             "width": 800,
@@ -777,8 +782,23 @@
             }
           },
           {
+            "id": "apt3-kit-door",
+            "wall": "w23",
+            "t": 0.5,
+            "kind": "door",
+            "width": 800,
+            "height": 2100,
+            "sill": 0,
+            "hinge": "left",
+            "swing": "in",
+            "ext": {
+              "role": "interior",
+              "label": "厨房门"
+            }
+          },
+          {
             "id": "apt3-slide",
-            "wall": "w25",
+            "wall": "w26",
             "t": 0.5,
             "kind": "slide",
             "width": 2400,
@@ -792,7 +812,7 @@
             }
           },
           {
-            "id": "apt3-master-win",
+            "id": "apt3-mbed-win",
             "wall": "w1",
             "t": 0.5,
             "kind": "window",
@@ -807,7 +827,7 @@
             }
           },
           {
-            "id": "apt3-second-win",
+            "id": "apt3-bed2-win",
             "wall": "w5",
             "t": 0.5,
             "kind": "window",
@@ -822,7 +842,7 @@
             }
           },
           {
-            "id": "apt3-child-win",
+            "id": "apt3-kid-win",
             "wall": "w7",
             "t": 0.5,
             "kind": "window",
@@ -837,18 +857,18 @@
             }
           },
           {
-            "id": "apt3-dine-win",
-            "wall": "w21",
+            "id": "apt3-kit-win",
+            "wall": "w25",
             "t": 0.5,
             "kind": "window",
-            "width": 1500,
+            "width": 1200,
             "height": 1500,
             "sill": 900,
             "hinge": "left",
             "swing": "in",
             "ext": {
               "role": "window",
-              "label": "餐厅窗"
+              "label": "厨房窗"
             }
           }
         ],
@@ -921,13 +941,13 @@
           },
           {
             "id": "r7",
-            "name": "厨房",
-            "type": "kitchen",
-            "floor": "tile",
+            "name": "餐厅",
+            "type": "dining",
+            "floor": "wood",
             "floorOffset": 0,
             "seed": {
-              "x": 7200,
-              "y": 5250
+              "x": 8700,
+              "y": 5100
             }
           },
           {
@@ -938,18 +958,18 @@
             "floorOffset": 0,
             "seed": {
               "x": 7200,
-              "y": 7050
+              "y": 6900
             }
           },
           {
             "id": "r9",
-            "name": "餐厅",
-            "type": "dining",
-            "floor": "wood",
+            "name": "厨房",
+            "type": "kitchen",
+            "floor": "tile",
             "floorOffset": 0,
             "seed": {
               "x": 9900,
-              "y": 6000
+              "y": 6900
             }
           },
           {

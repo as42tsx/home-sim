@@ -1,7 +1,7 @@
 /**
  * Write docs/template-area-report.md from the encoded templates.
- * Centreline areas are compared with Luna's table. Net areas are recorded
- * and are not forced to match the table.
+ * Centreline areas are compared with expected.areaM2 (still centreline in v1.2).
+ * Net areas are the user-facing 使用面积 and are not forced to match that column.
  */
 
 import fs from 'node:fs';
@@ -88,10 +88,14 @@ function section(file) {
   lines.push('| 房间 | Luna 面积 | 推导中线面积 | 差值 | 推导内净面积 | 差值 |');
   lines.push('| --- | ---: | ---: | ---: | ---: | ---: |');
   let interiorCl = 0;
+  let interiorNet = 0;
   for (const row of file.expected.rooms) {
     const face = result.derived.find((item) => item.name === row.name);
     const stored = floor.rooms.find((item) => item.name === row.name);
-    if (stored && stored.type !== 'balcony' && face) interiorCl += face.centerlineAreaM2;
+    if (stored && stored.type !== 'balcony' && face) {
+      interiorCl += face.centerlineAreaM2;
+      interiorNet += face.areaM2;
+    }
     if (!face) {
       lines.push(`| ${row.name} | ${row.areaM2} | 未识别 | — | 未识别 | — |`);
       continue;
@@ -99,7 +103,12 @@ function section(file) {
     lines.push(`| ${row.name} | ${row.areaM2} | ${fmt(face.centerlineAreaM2)} | ${fmt(face.centerlineAreaM2 - row.areaM2)} | ${fmt(face.areaM2)} | ${fmt(face.areaM2 - row.areaM2)} |`);
   }
   lines.push('');
-  lines.push(`不含阳台的推导中线合计 ${fmt(interiorCl)} m²。表记套内 ${file.expected.interiorTotalM2} m²（${file.id === 'apt-3br' ? '表内写明 88.9；各房间宽×深未四舍五入之和为 88.92' : '表内为约数'}）。`);
+  const centrelineNote = file.id === 'apt-3br'
+    ? '中线合计写明 88.9；各房间宽×深未四舍五入之和为 88.92'
+    : '中线合计的约数';
+  lines.push(`不含阳台的推导中线合计 ${fmt(interiorCl)} m²。expected.interiorTotalM2 ${file.expected.interiorTotalM2} m²（${centrelineNote}）。`);
+  lines.push('');
+  lines.push(`不含阳台的推导内净合计 ${fmt(interiorNet)} m²。`);
   lines.push('');
   lines.push('### 门窗端距');
   lines.push('');
@@ -107,11 +116,24 @@ function section(file) {
   lines.push('');
   lines.push('| 门窗 | 种类 | 墙段 mm | 洞宽 | 自由净距 | 起端间隙 | 末端间隙 | 结论 |');
   lines.push('| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |');
+  const violations = [];
   for (const opening of floor.openings) {
     const info = openingClearance(plan, 'f1', opening.id);
     const errs = checkOpeningPlacement(plan, 'f1', opening.id);
     const verdict = errs.length ? errs.map((item) => item.code).join(', ') : '通过';
     lines.push(`| ${opening.ext?.label || opening.id} | ${opening.kind} | ${fmtMm(info.segmentLength)} | ${opening.width} | ${fmtMm(info.freeSpan)} | ${fmtMm(info.startGap)} | ${fmtMm(info.endGap)} | ${verdict} |`);
+    if (errs.length) {
+      violations.push({
+        id: opening.id,
+        label: opening.ext?.label || opening.id,
+        codes: errs.map((item) => item.code),
+        width: opening.width,
+        segmentLength: info.segmentLength,
+        freeSpan: info.freeSpan,
+        startGap: info.startGap,
+        endGap: info.endGap,
+      });
+    }
   }
   lines.push('');
   const reach = reachability(plan, 'f1');
@@ -127,38 +149,64 @@ function section(file) {
     lines.push(`未闭合缺口 ${fmtMm(result.unclosed.gap)} mm。`);
     lines.push('');
   }
-  return lines.join('\n');
+  return {
+    markdown: lines.join('\n'),
+    name: file.name,
+    interiorNet,
+    violations,
+    unreachable: reach.unreachable,
+  };
 }
 
 const index = JSON.parse(fs.readFileSync(path.join(root, 'templates/index.json'), 'utf8'));
 const parts = [];
 parts.push('# 模板面积核对');
 parts.push('');
-parts.push('由 `scripts/template-report.js` 生成。单位：平方米（表内毫米已换算）。「推导中线面积」是墙中线围合的面积；「推导内净面积」是每条边按该墙自身厚度的一半向室内退让后的面积（虚拟分隔线按厚度 0）。差值 = 推导值 − Luna 表值。');
+parts.push('由 `scripts/template-report.js` 生成。单位：平方米（表内毫米已换算）。「推导中线面积」是墙中线围合的面积；「推导内净面积」是每条边按该墙自身厚度的一半向室内退让后的面积（虚拟分隔线按厚度 0）。差值 = 推导值 − `expected` 里的中线面积。');
 parts.push('');
-parts.push('Luna v1.1 同时写了「尺寸都是净尺寸」和「画布上以墙中线为准」。三套矩形互相贴合，三居套内 88.9 m² 与各房间宽×深之和（88.92，四舍五入到一位小数即 88.9）相符。本仓库按开发说明把表中坐标当作墙中线，不改数字去凑内净面积。内净与表值的差是墙厚，不是录入误差。');
+parts.push('Luna v1.2（v1.1 作废）规定表中 x / y / 宽 / 深为墙中线毫米。「Luna 面积」列是模板 `expected.rooms.areaM2`，仍是中线面积（`areaBasis: centerline`），不是说明书里的使用面积。使用面积是「推导内净面积」。不含阳台的内净合计写在每节里，并四舍五入到两位小数后记入 `templates/index.json` 的 `netAreaM2`。内净与中线的差是墙厚。');
 parts.push('');
+const findings = [];
 for (const item of index.templates) {
   const file = JSON.parse(fs.readFileSync(path.join(root, 'templates', item.file), 'utf8'));
-  parts.push(section(file));
+  const built = section(file);
+  findings.push(built);
+  parts.push(built.markdown);
 }
 parts.push('## 端距违反');
 parts.push('');
-parts.push('一居室入户门 `apt1-entry`：洞宽 1000 mm，所在墙段是玄关西墙 y 4200–5400，长 1200 mm。起端（y=4200）接 120 mm 内墙，侵入 60 mm；末端（y=5400）接 240 mm 外墙，侵入 120 mm。共线的西向外墙不计入。自由净距 = 1200 − 60 − 120 = 1020 mm。门居中后边缘在 100 mm 与 1100 mm，间隙为 40 mm 与 −20 mm，都小于 100 mm，记为 `OPENING_CLEARANCE`。两居、三居的全部门窗在同一算法下间隙均 ≥ 100 mm。');
+const bad = findings.flatMap((item) => item.violations.map((hit) => ({ name: item.name, ...hit })));
+if (bad.length === 0) {
+  parts.push('0 条。三套模板的门窗都通过 `checkOpeningPlacement`：间隙均 ≥ 100 mm，洞口不越出墙段节点。');
+} else {
+  for (const hit of bad) {
+    parts.push(`- ${hit.name} ${hit.label} \`${hit.id}\`：${hit.codes.join(', ')}。墙段 ${fmtMm(hit.segmentLength)} mm，洞宽 ${hit.width}，自由净距 ${fmtMm(hit.freeSpan)}，起端间隙 ${fmtMm(hit.startGap)}，末端间隙 ${fmtMm(hit.endGap)}。`);
+  }
+}
 parts.push('');
-parts.push('## 假设（待产品确认）');
+parts.push('## 从入户门可达（汇总）');
 parts.push('');
-parts.push('- 表中坐标按墙中线录入。内净面积另列，不要求等于 Luna 的一位小数。');
-parts.push('- 两居 y=3900、x 6000–7800，三居 y=4200、x 3600–5100，按「中间不设门」做成 `virtual: true` 的分隔线（待确认）。分隔线在数据里厚度仍为 120（墙厚下限），房间内缩时按 0。');
-parts.push('- 一居玄关过道与客餐厅的共用边（x=3300，y 4200–5400）表内没有门，也没有「不设门」这句话，按字面做成 120 mm 实墙。因此从入户只能到玄关过道和卧室，客餐厅、卫生间、厨房、阳台不可达。');
-parts.push('- 三居餐厅与客厅之间没有门。厨房只从餐厅进入。从餐厅不可达客厅、公卫、阳台、过道、主卧、次卧、主卫。');
-parts.push('- 外墙 240，内墙 120。阳台外侧以及阳台与室内的分界都按外墙 240（待确认）。');
-parts.push('- 门（含入户门、推拉门）高 2100、门槛 0；窗高 1500、窗台 900。合页一律 left，开启方向一律 in。表内没有这些数。');
-parts.push('- 洞口居中放在点名的那一段墙上，表内没有偏距。');
+const blocked = findings.filter((item) => item.unreachable.length);
+if (blocked.length === 0) {
+  parts.push('三套模板的不可达房间都是（无）。每个推导房间都能从入户门走到。');
+} else {
+  for (const item of blocked) {
+    parts.push(`${item.name}不可达：${item.unreachable.join('、')}。`);
+  }
+}
+parts.push('');
+parts.push('## 编码约定');
+parts.push('');
+parts.push('- v1.2 坐标按墙中线录入。`expected` 记中线面积；使用面积是推导内净，不含阳台。');
+parts.push('- 虚拟分隔按 v1.2 写成 `virtual: true`。数据里厚度仍为 120（墙厚下限），房间内缩时按 0。一居玄关与客餐厅：x=3300，y 3900–5400。两居过道与客餐厅：y=3900，x 6000–7800。三居客厅与餐厅：x=6000，y 4200–6000。三居过道与客厅：y=4200，x 3600–5100。');
+parts.push('- 外墙 240，内墙 120。');
+parts.push('- 门（含入户门、推拉门）高 2100、门槛 0；窗高 1500、窗台 900。洞口居中放在点名的那一段墙上。以上为 v1.2 所写。');
 parts.push('- 端距只扣掉端部非共线、非虚拟墙的最大半墙厚，不把共线延伸的墙厚再扣一次。');
-parts.push('- 层高与净高都写 2800（Luna 的层高）。楼板厚 200 另记，没有从 2800 里扣。');
+parts.push('- 合页一律 left，开启方向一律 in。表内没有这两项。');
+parts.push('- 阳台外侧以及阳台与室内的分界都按外墙 240。');
+parts.push('- 层高与净高都写 2800。楼板厚 200 另记，没有从 2800 里扣。');
 parts.push('- 承重全部为 false。饰面 paint-white。地面：卧室/起居/餐厅/客餐厅 wood，厨卫过道阳台 tile，玄关 stone。');
-parts.push('- 楼梯的 `turn`（默认 left）和 `well`（默认 0）是待确认的附加字段，模板里没有楼梯。');
+parts.push('- 模板里没有楼梯。方案模型里楼梯的 `turn`（默认 left）和 `well`（默认 0）仍是可选字段。');
 parts.push('');
 
 const out = path.join(root, 'docs/template-area-report.md');

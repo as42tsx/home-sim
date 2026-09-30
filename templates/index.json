@@ -4,19 +4,19 @@
       "id": "apt-1br",
       "name": "一居室",
       "file": "apt-1br.json",
-      "area": 39
+      "netAreaM2": 34.44
     },
     {
       "id": "apt-2br",
       "name": "两居室",
       "file": "apt-2br.json",
-      "area": 63
+      "netAreaM2": 57.07
     },
     {
       "id": "apt-3br",
       "name": "三居室",
       "file": "apt-3br.json",
-      "area": 88.9
+      "netAreaM2": 80.56
     }
   ]
 }

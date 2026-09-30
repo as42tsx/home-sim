@@ -13,14 +13,11 @@ import { deriveAllFloors } from '../src/rooms/index.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Filled from openingClearance / checkOpeningPlacement on the literal encoding.
- * apt1-entry: 1000 mm door on the 1200 mm west segment (y 4200–5400).
- * Intrusion 60 mm at the 120 mm interior wall and 120 mm at the 240 mm
- * exterior wall. Free span 1020 mm. Centred edges sit at 100 mm and 1100 mm,
- * so the gaps are 40 mm and -20 mm.
+ * v1.2 has no clearance violations.
+ * checkOpeningPlacement returns an empty list for every opening.
  */
 const KNOWN_CLEARANCE_VIOLATIONS = {
-  'apt-1br': ['apt1-entry'],
+  'apt-1br': [],
   'apt-2br': [],
   'apt-3br': [],
 };

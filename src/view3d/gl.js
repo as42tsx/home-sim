@@ -582,6 +582,18 @@ export function mountView(THREE, addons, options) {
     return Promise.resolve(new Blob([png], { type: 'image/png' }));
   }
 
+  function resetView() {
+    if (disposed) return;
+    if (walking) exitWalk();
+    animToken += 1;
+    cancelAnim();
+    applyPose(enterPose(ENTER_MS, reduced));
+    controls.enabled = true;
+    syncControls();
+    entered = true;
+    requestRender();
+  }
+
   function dispose() {
     if (disposed) return;
     disposed = true;
@@ -622,6 +634,7 @@ export function mountView(THREE, addons, options) {
     }
     return {
       walking,
+      selectedId,
       floorId: currentFloorId,
       walkFloorId,
       camera: camera.position.toArray(),
@@ -650,7 +663,20 @@ export function mountView(THREE, addons, options) {
       kind: hit.object.userData.kind || '',
       floorId: hit.object.userData.floorId || null,
       distance: hit.distance,
+      point: [hit.point.x, hit.point.y, hit.point.z],
     }));
+  }
+
+  function debugProject(xMm, yMm, yMeters = 0) {
+    const v = new THREE.Vector3((Number(xMm) || 0) / 1000, Number(yMeters) || 0, (Number(yMm) || 0) / 1000);
+    camera.updateMatrixWorld(true);
+    v.project(camera);
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
+      visible: v.z >= -1 && v.z <= 1,
+    };
   }
 
   function syncFloors() {
@@ -1403,11 +1429,13 @@ export function mountView(THREE, addons, options) {
     requestRender,
     renderInfo,
     toPNG,
+    resetView,
     resize,
     dispose,
     setFloorVisible,
     debugState,
     debugRay,
+    debugProject,
   };
 }
 

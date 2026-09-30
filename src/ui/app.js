@@ -15,6 +15,7 @@ import {
   furnitureDeleteCommand,
   furnitureDuplicateCommand,
   furniturePatchCommand,
+  metaCommand,
   nodesMoveCommand,
   openingAddCommand,
   openingDeleteCommand,
@@ -40,12 +41,15 @@ import { wallQuad } from '../editor/wall-shape.js';
 import { CATALOG, catalogCategories, catalogEntry } from '../furniture/catalog.js';
 import { formatMessage, loadLocale } from '../i18n/index.js';
 import { exportPlanJSON, importPlanJSON } from '../io/json.js';
+import { PNG_LONG_EDGE } from '../io/png-fit.js';
+import { decodeShareLink, encodeShareLink } from '../io/share.js';
 import { WALL_THICKNESS } from '../model/constants.js';
 import { createEmptyPlan, floorBelow, floorsByElevation, getFloor } from '../model/document.js';
 import { uniqueId } from '../model/ids.js';
 import { validatePlan } from '../model/validate.js';
 import { checkOpeningPlacement, openingClearance } from '../openings/clearance.js';
 import { mountPlanView } from '../plan2d/view.js';
+import { renderPlanPng } from './png-2d.js';
 import { deriveRooms } from '../rooms/index.js';
 import {
   planKey,
@@ -80,6 +84,15 @@ const TOOL_KEYS = {
   measure: 'M',
   pan: 'H',
 };
+
+const EDIT_TOOLS = new Set(['wall', 'room', 'door', 'window', 'demolish', 'library']);
+
+const READONLY_BLOCK = new Set([
+  'undo', 'redo', 'import-json', 'show-picker', 'open-plan', 'copy-plan', 'rename-plan',
+  'delete-plan', 'open-recent', 'pref-virtual', 'pref-thickness', 'wall-virtual', 'demolish',
+  'delete-selection', 'duplicate-selection', 'opening-width', 'opening-kind', 'opening-swing',
+  'opening-hinge', 'opening-center', 'conflict-keep', 'conflict-load', 'rotate-selection',
+]);
 
 const state = {
   prefs: null,
@@ -120,9 +133,20 @@ const state = {
   toastTimer: 0,
   view3d: null,
   view3dMod: null,
+  view3dBusy: false,
   webgl: null,
   camToken: 0,
   refit: false,
+  readOnly: false,
+  walkPick: false,
+  cutaway: false,
+  sheetSnap: 0,
+  sheetPage: 'library',
+  sheetDrag: null,
+  sheetSuppressClick: false,
+  layout: 'desk',
+  lastSyncedSel: undefined,
+  modeToken: 0,
 };
 
 let storage = null;
@@ -130,6 +154,7 @@ let view = null;
 let svg = null;
 let modalResolver = null;
 let debugRef = null;
+let enterGen = 0;
 
 const ui = {};
 
@@ -230,7 +255,18 @@ function ensureChrome() {
   ui.tabs.innerHTML = `
     <button type="button" data-mode="plan" data-i18n="mode.plan">户型</button>
     <button type="button" data-mode="furnish" data-i18n="mode.furnish">布置</button>
-    <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>`;
+    <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>
+    <button type="button" data-action="more-menu" data-i18n="action.more">更多</button>
+    <button type="button" data-action="save-copy" data-readonly-tab hidden data-i18n="share.saveShort">保存</button>
+    <div class="menu up" data-menu="more" hidden>
+      <button type="button" class="item" data-action="share"><span data-i18n="action.share">分享</span></button>
+      <button type="button" class="item" data-action="export-json"><span data-i18n="action.exportJson">导出 JSON</span></button>
+      <button type="button" class="item" data-action="import-json"><span data-i18n="action.importJson">导入 JSON</span></button>
+      <button type="button" class="item" data-action="export-png"><span data-i18n="action.exportPng">导出 PNG</span></button>
+      <button type="button" class="item" data-action="lang"><span data-i18n="action.lang">中 / EN</span></button>
+      <button type="button" class="item" data-action="help"><span data-i18n="action.help">帮助</span></button>
+      <button type="button" class="item" data-action="tool-measure"><span data-i18n="tool.measure">测量</span></button>
+    </div>`;
 
   if (!ui.canvas.querySelector('#view3d-host')) {
     const host = document.createElement('div');
@@ -238,6 +274,45 @@ function ensureChrome() {
     host.hidden = true;
     ui.canvas.append(host);
   }
+  ui.hud = ensureDiv('hud3d', 'data-hud');
+  ui.hud.dataset.testid = 'hud3d';
+  ui.hud.hidden = true;
+  ui.hud.innerHTML = `
+    <button type="button" class="btn" data-action="cutaway" data-testid="hud-cutaway" aria-pressed="false"><span data-i18n="action.cutaway">剖切</span></button>
+    <button type="button" class="btn" data-action="walk" data-testid="hud-walk"><span data-i18n="action.walk">漫游</span></button>
+    <button type="button" class="btn" data-action="reset-view" data-testid="hud-reset"><span data-i18n="action.resetView">复位</span></button>
+    <button type="button" class="btn" data-action="back-2d" data-testid="hud-back"><span data-i18n="action.back2d">返回 2D</span></button>`;
+  ui.readout = ensureDiv('readonly-banner', 'data-readonly');
+  ui.readout.dataset.testid = 'readonly-banner';
+  ui.readout.hidden = true;
+  ui.readout.innerHTML = `
+    <span data-i18n="share.banner">只读查看 ·</span>
+    <button type="button" class="btn primary" data-action="save-copy" data-testid="save-copy"><span data-i18n="share.save">保存到我的方案</span></button>`;
+  ui.sheet = ensureDiv('sheet', 'data-sheet');
+  ui.sheet.dataset.testid = 'sheet';
+  ui.sheet.innerHTML = `
+    <button type="button" class="sheet-handle" data-sheet-handle data-action="sheet-cycle" aria-label="抽屉"></button>
+    <div class="sheet-tabs">
+      <button type="button" data-sheet-page="library" data-i18n="sheet.library">家具库</button>
+      <button type="button" data-sheet-page="props" data-i18n="sheet.props">属性</button>
+    </div>
+    <div class="sheet-pages">
+      <div class="sheet-page" data-page="library"></div>
+      <div class="sheet-page" data-page="props" hidden></div>
+    </div>`;
+  ui.sheetLib = ui.sheet.querySelector('[data-page="library"]');
+  ui.sheetProps = ui.sheet.querySelector('[data-page="props"]');
+  ui.fab = ensureDiv('fab', 'data-fab');
+  ui.fab.dataset.testid = 'fab';
+  ui.fab.hidden = true;
+  ui.fab.innerHTML = `
+    <button type="button" data-action="rotate-selection" data-i18n="action.rotate">旋转</button>
+    <button type="button" data-action="duplicate-selection" data-i18n="action.copy">复制</button>
+    <button type="button" data-action="delete-selection" data-i18n="inspector.delete">删除</button>
+    <button type="button" data-action="sheet-props" data-i18n="action.props">属性</button>`;
+  state.layout = layoutName();
+  document.body.dataset.mode = state.mode;
+  document.body.dataset.sheet = '0';
   ui.floors = ensureDiv('floors', 'data-floors');
   ui.scale = ensureDiv('scalebar', 'data-scale');
   ui.scale.innerHTML = '<span data-scale-label></span><i data-scale-line></i>';
@@ -271,6 +346,390 @@ function ensureDiv(className, attr) {
   }
   if (attr) node.setAttribute(attr, '');
   return node;
+}
+
+function layoutName() {
+  const width = window.innerWidth;
+  if (width < 600) return 'phone';
+  if (width < 900) return 'tablet';
+  if (width < 1200) return 'overlay';
+  return 'desk';
+}
+
+function prefersReduced() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function walkingNow() {
+  try { return !!state.view3d?.debugState?.().walking; } catch { return false; }
+}
+
+function syncLayoutClass() {
+  state.layout = layoutName();
+  document.body.dataset.layout = state.layout;
+  document.body.dataset.mode = state.mode;
+  document.body.dataset.sheet = String(state.sheetSnap);
+  document.body.classList.toggle('is-readonly', !!state.readOnly);
+  document.body.classList.toggle('is-walkpick', !!state.walkPick);
+}
+
+function syncSheet() {
+  document.body.dataset.sheet = String(state.sheetSnap);
+  if (!ui.sheet) return;
+  for (const tab of ui.sheet.querySelectorAll('[data-sheet-page]')) {
+    tab.classList.toggle('is-on', tab.dataset.sheetPage === state.sheetPage);
+  }
+  const lib = ui.sheet.querySelector('[data-page="library"]');
+  const props = ui.sheet.querySelector('[data-page="props"]');
+  if (lib) lib.hidden = state.sheetPage !== 'library';
+  if (props) props.hidden = state.sheetPage !== 'props';
+}
+
+function paint3dButton() {
+  const loading = !!state.view3dBusy;
+  const blocked = !!(state.webgl && state.webgl.ok === false);
+  const label = loading ? t('view3d.loading') : t('action.view3d');
+  for (const button of document.querySelectorAll('[data-action="view3d"]')) {
+    const span = button.querySelector('span');
+    if (span) span.textContent = label;
+    button.disabled = loading || blocked;
+    if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
+  }
+  for (const button of document.querySelectorAll('button[data-mode="view3d"]')) {
+    button.disabled = blocked;
+    if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
+  }
+}
+
+function renderHud() {
+  if (!ui.hud) return;
+  const on = state.mode === 'view3d' && !state.pickerOpen;
+  ui.hud.hidden = !on;
+  const cut = ui.hud.querySelector('[data-action="cutaway"]');
+  if (cut) cut.setAttribute('aria-pressed', state.cutaway ? 'true' : 'false');
+  const walk = ui.hud.querySelector('[data-action="walk"]');
+  if (walk) walk.setAttribute('aria-pressed', walkingNow() ? 'true' : 'false');
+}
+
+function selectionAnchor() {
+  const floor = ensureFloor();
+  if (!floor || !state.selection) return null;
+  const sel = state.selection;
+  if (sel.kind === 'furniture') {
+    const item = floor.furniture.find((entry) => entry.id === sel.id);
+    if (!item) return null;
+    return { x: item.cx, y: item.cy - (item.d || 400) / 2 };
+  }
+  if (sel.kind === 'wall' || sel.kind === 'opening') {
+    let wall = null;
+    if (sel.kind === 'wall') wall = floor.walls.find((item) => item.id === sel.id);
+    else {
+      const opening = floor.openings.find((item) => item.id === sel.id);
+      wall = opening && floor.walls.find((item) => item.id === opening.wall);
+    }
+    if (!wall) return null;
+    const nodes = new Map(floor.nodes.map((node) => [node.id, node]));
+    const a = nodes.get(wall.a);
+    const b = nodes.get(wall.b);
+    if (!a || !b) return null;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  if (sel.kind === 'room') {
+    const live = liveDerive(state.floorId);
+    const face = (live.derived || []).find((item) => item.roomId === sel.id);
+    const at = face?.centroid || face?.centerline?.[0] || face?.polygon?.[0];
+    if (!at) return null;
+    return { x: at.x, y: at.y };
+  }
+  return null;
+}
+
+function renderFab() {
+  if (!ui.fab) return;
+  const show = state.layout === 'phone'
+    && !state.readOnly
+    && state.mode !== 'view3d'
+    && !state.pickerOpen
+    && !!state.selection
+    && !svg?.hidden;
+  if (!show || !view) {
+    ui.fab.hidden = true;
+    return;
+  }
+  const anchor = selectionAnchor();
+  if (!anchor) {
+    ui.fab.hidden = true;
+    return;
+  }
+  const client = view.clientFromWorld(anchor.x, anchor.y);
+  const barW = 44 * 4 + 4 * 3 + 8;
+  let left = client.x - barW / 2;
+  let top = client.y - 64;
+  left = Math.max(8, Math.min(window.innerWidth - barW - 8, left));
+  top = Math.max(60, Math.min(window.innerHeight - 140, top));
+  ui.fab.style.left = `${Math.round(left)}px`;
+  ui.fab.style.top = `${Math.round(top)}px`;
+  ui.fab.hidden = false;
+}
+
+function applyReadOnlyLocks() {
+  const name = ui.top.querySelector('[data-plan-name]');
+  if (name) name.readOnly = !!state.readOnly;
+  for (const button of ui.tools.querySelectorAll('[data-tool]')) {
+    button.disabled = !!(state.readOnly && EDIT_TOOLS.has(button.dataset.tool));
+  }
+  if (!state.readOnly) return;
+  for (const root of [ui.inspector, ui.sheetProps, ui.side]) {
+    if (!root) continue;
+    for (const el of root.querySelectorAll('input, select, textarea')) {
+      if (el.hasAttribute('data-search')) continue;
+      el.disabled = true;
+    }
+    for (const el of root.querySelectorAll('button')) {
+      if (el.dataset.room) continue;
+      const action = el.dataset.action;
+      if (el.dataset.furn || el.dataset.pref || (action && READONLY_BLOCK.has(action))) el.disabled = true;
+    }
+  }
+}
+
+function syncViewSelection(force) {
+  if (!state.view3d || state.mode !== 'view3d') return;
+  const id = state.selection?.kind === 'furniture' ? state.selection.id : null;
+  if (!force && id === state.lastSyncedSel) return;
+  state.lastSyncedSel = id;
+  try { state.view3d.select?.(id); } catch { /* highlight is cosmetic */ }
+}
+
+function onView3dSelect(id) {
+  if (!state.store) return;
+  if (!id) {
+    state.selection = null;
+    state.lastSyncedSel = null;
+    state.formError = '';
+    renderChrome();
+    return;
+  }
+  const plan = state.store.getPlan();
+  const floor = (plan.floors || []).find((item) => (item.furniture || []).some((entry) => entry.id === id));
+  if (floor && floor.id !== state.floorId) {
+    state.floorId = floor.id;
+    try { state.view3d?.setCurrentFloor?.(floor.id); } catch { /* floor highlight follows the next render */ }
+  }
+  state.selection = { kind: 'furniture', id };
+  state.lastSyncedSel = id;
+  state.formError = '';
+  renderAll();
+}
+
+function safeStem(name) {
+  const cleaned = String(name || 'plan').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned || 'plan';
+}
+
+function downloadBlob(blob, filename) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+}
+
+function pngModel() {
+  const plan = state.store.getPlan();
+  const floor = ensureFloor();
+  const live = floor ? liveDerive(state.floorId) : null;
+  const drawn = floor
+    ? floorGraphics(floor, live, { labels: true })
+    : { rooms: [], walls: [], openings: [], labels: [], nodes: new Map() };
+  let furniture = [];
+  if (floor) {
+    const quads = [];
+    for (const wall of floor.walls || []) {
+      if (wall.virtual || wall.demolished) continue;
+      const a = drawn.nodes?.get(wall.a);
+      const b = drawn.nodes?.get(wall.b);
+      if (a && b) quads.push(wallQuad(a, b, wall.thickness, false));
+    }
+    const warns = warningIds(floor.furniture || [], quads, live?.derived || []);
+    furniture = (floor.furniture || []).map((item) => ({
+      item,
+      shape: shapeOf(item),
+      warn: warns.has(item.id),
+    }));
+  }
+  return {
+    name: plan.meta?.name || '',
+    rooms: drawn.rooms,
+    walls: drawn.walls,
+    openings: drawn.openings,
+    furniture,
+    labels: drawn.labels,
+  };
+}
+
+async function exportPng() {
+  if (!state.store) return;
+  const stem = safeStem(state.store.getPlan().meta?.name);
+  try {
+    if (state.mode === 'view3d' && state.view3d?.toPNG) {
+      const blob = await state.view3d.toPNG({ longEdge: PNG_LONG_EDGE });
+      downloadBlob(blob, `${stem}-3D.png`);
+      return;
+    }
+    const blob = await renderPlanPng(pngModel());
+    downloadBlob(blob, `${stem}-2D.png`);
+  } catch {
+    toast(t('toast.saveFail'), 'danger');
+  }
+}
+
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to a selected field */ }
+  try {
+    const input = ui.modals.querySelector('[data-testid="share-link"]');
+    if (input) {
+      input.focus();
+      input.select();
+      if (document.execCommand('copy')) return true;
+    }
+  } catch { /* the dialog stays so the link can be copied by hand */ }
+  return false;
+}
+
+async function copyShareField() {
+  const input = ui.modals.querySelector('[data-testid="share-link"]');
+  const text = input?.value || '';
+  const ok = await copyText(text);
+  if (ok) toast(t('share.copied'));
+  else {
+    input?.focus();
+    input?.select();
+    toast(t('share.copyFallback'), '', null, 4000);
+  }
+}
+
+async function openShareDialog() {
+  if (!state.store) return;
+  const plan = state.store.getPlan();
+  const baseUrl = `${location.origin}${location.pathname}`;
+  let encoded;
+  try {
+    encoded = await encodeShareLink(plan, { baseUrl });
+  } catch {
+    toast(t('share.incomplete'), 'danger');
+    return;
+  }
+  if (!encoded.ok) {
+    const kb = (encoded.bytes / 1024).toFixed(1);
+    const ok = await showModal({
+      title: t('share.tooBigTitle'),
+      body: `<p>${escapeHtml(t('share.tooBig', { kb }))}</p>`,
+      confirm: t('action.exportJson'),
+      cancel: t('share.close'),
+    });
+    if (ok) exportJSON();
+    return;
+  }
+  const kb = (encoded.bytes / 1024).toFixed(1);
+  ui.modals.innerHTML = `
+    <div class="modal-mask">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
+        <h3 id="share-title">${escapeHtml(t('share.title'))}</h3>
+        <div class="modal-body">
+          <p class="formula" data-testid="share-size">${escapeHtml(t('share.size', { kb }))}</p>
+          <input class="share-link" data-testid="share-link" readonly value="${escapeHtml(encoded.url)}" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-action="share-close">${escapeHtml(t('share.close'))}</button>
+          <button type="button" class="btn primary" data-action="copy-share">${escapeHtml(t('share.copy'))}</button>
+        </div>
+      </div>
+    </div>`;
+  modalResolver = () => {};
+  try {
+    const copied = await copyText(encoded.url);
+    if (copied) toast(t('share.copied'));
+  } catch { /* the dialog still holds the link */ }
+}
+
+function openLocalOrPicker() {
+  const lastId = readLastId(storage);
+  const last = lastId ? readPlan(storage, lastId) : null;
+  const lastErrors = last ? validatePlan(last).filter((item) => item.severity !== 'warning') : [{ code: 'missing' }];
+  if (last && !lastErrors.length) adopt(last, { save: false, arm: true, readOnly: false });
+  else {
+    state.readOnly = false;
+    state.pickerOpen = true;
+    syncPicker();
+    renderAll();
+  }
+}
+
+function enterShared(plan) {
+  adopt(plan, {
+    save: false,
+    arm: false,
+    readOnly: true,
+    tool: 'select',
+    multiToast: (plan.floors?.length || 0) > 1,
+  });
+}
+
+async function onHashChange() {
+  const hash = location.hash || '';
+  if (!hash.startsWith('#p=')) return;
+  const decoded = await decodeShareLink(hash);
+  if (!decoded.ok) {
+    toast(t('share.incomplete'), 'warn', null, 4000);
+    return;
+  }
+  enterShared(decoded.plan);
+}
+
+async function saveSharedCopy() {
+  if (!state.readOnly || !state.store) return;
+  const copy = clonePlanFresh(state.store.getPlan());
+  let result;
+  try { result = writePlan(storage, copy); } catch { result = { ok: false }; }
+  if (!result.ok) {
+    toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+    return;
+  }
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  adopt(copy, { save: false, arm: true, readOnly: false });
+  toast(t('share.saved'));
+}
+
+async function beginWalkAt(world) {
+  if (!state.store || !state.floorId || !world) return;
+  state.walkPick = false;
+  state.store.dispatch(metaCommand((plan) => {
+    if (!plan.markers || typeof plan.markers !== 'object') plan.markers = {};
+    plan.markers.walkStart = { floor: state.floorId, x: world.x, y: world.y, yaw: 0 };
+  }));
+  await enter3d(false);
+  if (state.mode !== 'view3d' || !state.view3d) return;
+  try { state.view3d.enterWalk(); } catch { /* orbit remains usable */ }
+  toast(t('walk.exit'));
+  renderHud();
+}
+
+function openHelp() {
+  const items = ['help.s1', 'help.s2', 'help.s3', 'help.s4', 'help.s5']
+    .map((key) => `<li>${escapeHtml(t(key))}</li>`)
+    .join('');
+  void showModal({
+    title: t('help.title'),
+    body: `<ul class="help-list">${items}</ul>`,
+    confirm: t('common.confirm'),
+    cancel: t('share.close'),
+  });
 }
 
 function toolIcon(name) {
@@ -311,6 +770,7 @@ function bindDebug() {
     state.camToken += 1;
     fitCamera();
   };
+  debugRef.view3d = () => state.view3d || null;
   debugRef.store = null;
 }
 
@@ -324,6 +784,7 @@ function bindEvents() {
   window.addEventListener('pointercancel', (event) => onPointerUp(event, true));
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('hashchange', () => { void onHashChange(); });
   window.addEventListener('storage', onStorage);
   svg.addEventListener('wheel', onWheel, { passive: false });
   ui.file.addEventListener('change', () => {
@@ -338,14 +799,24 @@ function bindEvents() {
     }
   });
   ui.top.querySelector('[data-plan-name]').addEventListener('change', (event) => {
+    if (state.readOnly) {
+      event.target.value = state.store?.getPlan()?.meta?.name || '';
+      return;
+    }
     const name = event.target.value.trim();
     if (!name || !state.store) return;
     if (name === state.store.getPlan().meta.name) return;
     state.store.dispatch(renameCommand(name));
   });
   const observer = new ResizeObserver(() => {
+    const next = layoutName();
+    const changed = next !== state.layout;
     if (state.refit) fitCamera();
     else renderCanvas();
+    if (changed) {
+      state.panelKey = '';
+      renderChrome();
+    } else renderFab();
     try { state.view3d?.resize?.(); } catch { /* 3D resize is best-effort */ }
   });
   observer.observe(ui.canvas);
@@ -361,15 +832,16 @@ async function boot() {
   document.documentElement.lang = state.prefs.lang === 'en' ? 'en' : 'zh-CN';
   document.title = t('app.title');
   renderStatic();
-  const lastId = readLastId(storage);
-  const last = lastId ? readPlan(storage, lastId) : null;
-  const lastErrors = last ? validatePlan(last).filter((item) => item.severity !== 'warning') : [{ code: 'missing' }];
-  if (last && !lastErrors.length) {
-    adopt(last, { save: false, arm: true });
+  const hash = location.hash || '';
+  if (hash.startsWith('#p=')) {
+    const decoded = await decodeShareLink(hash);
+    if (decoded.ok) enterShared(decoded.plan);
+    else {
+      toast(t('share.incomplete'), 'warn', null, 4000);
+      openLocalOrPicker();
+    }
   } else {
-    state.pickerOpen = true;
-    syncPicker();
-    renderAll();
+    openLocalOrPicker();
   }
   await refreshPicker();
   await probe3d();
@@ -383,14 +855,18 @@ async function boot() {
 }
 
 function adopt(plan, opts = {}) {
+  state.readOnly = opts.readOnly === true;
+  state.walkPick = false;
   state.pickerOpen = false;
   syncPicker();
   state.chain = null;
   state.lengthBuf = '';
   state.selection = null;
+  state.lastSyncedSel = undefined;
   state.measure = null;
   state.condemnedId = null;
   state.formError = '';
+  if (state.readOnly) state.tool = 'select';
   state.quiet = true;
   if (!state.store) {
     state.store = createEditorStore(plan);
@@ -402,8 +878,10 @@ function adopt(plan, opts = {}) {
   state.quiet = false;
   const ordered = floorsByElevation(state.store.getPlan());
   state.floorId = ordered[0]?.id ?? null;
-  state.armed = opts.arm !== false;
+  state.armed = opts.arm !== false && !state.readOnly;
   state.saveState = 'saved';
+  try { state.view3d?.exitWalk?.(); } catch { /* a new plan leaves walk */ }
+  try { state.view3d?.setCurrentFloor?.(state.floorId); } catch { /* 3D may not be mounted */ }
   if (opts.tool) setTool(opts.tool, true);
   renderAll();
   scheduleFit();
@@ -436,6 +914,7 @@ function onStore(_plan, change) {
   if (state.view3d && change) {
     try { state.view3d.update(change); } catch { /* keep 2D usable if the view rejects a change */ }
   }
+  if (change && (change.kind === 'furniture' || change.kind === 'full')) state.lastSyncedSel = undefined;
   if (state.quiet) return;
   renderCanvas();
   renderStatus();
@@ -445,6 +924,8 @@ function onStore(_plan, change) {
     scheduleSave();
   } else {
     updateHistoryButtons();
+    renderFab();
+    syncViewSelection();
   }
 }
 
@@ -494,6 +975,7 @@ function renderStatic() {
   const keep = ui.banner.querySelector('[data-action="conflict-keep"]');
   if (load) load.textContent = t('conflict.load');
   if (keep) keep.textContent = t('conflict.keep');
+  paint3dButton();
 }
 
 function renderName() {
@@ -511,17 +993,28 @@ function syncPicker() {
 }
 
 function renderChrome() {
+  syncLayoutClass();
   const key = panelSignature();
   if (key !== state.panelKey) {
     state.panelKey = key;
     ui.side.innerHTML = sideHTML();
     ui.inspector.innerHTML = inspectorHTML();
+    if (ui.sheetLib && (state.layout === 'phone' || state.layout === 'tablet')) {
+      ui.sheetLib.innerHTML = catalogHTML();
+      const walls = state.mode === 'plan' ? wallOptionsHTML() : '';
+      ui.sheetProps.innerHTML = `${walls}${inspectorHTML()}`;
+    }
     patchLength();
   }
   renderTools();
   renderModes();
   renderFloors();
   updateHistoryButtons();
+  applyReadOnlyLocks();
+  syncSheet();
+  renderFab();
+  renderHud();
+  syncViewSelection();
 }
 
 function panelSignature() {
@@ -549,6 +1042,7 @@ function panelSignature() {
     state.formError, state.chain ? state.chain.points.length : 0,
     state.prefs?.wallThickness, state.prefs?.wallVirtual, state.prefs?.wallBearing,
     state.prefs?.wallExterior, state.prefs?.furnitureSnap, state.prefs?.doorWidth, state.prefs?.windowWidth,
+    state.readOnly ? 1 : 0, state.layout,
   ].join('|');
 }
 
@@ -566,15 +1060,28 @@ function renderTools() {
 }
 
 function renderModes() {
-  for (const button of document.querySelectorAll('[data-mode]')) {
+  document.body.dataset.mode = state.mode;
+  document.body.classList.toggle('is-readonly', !!state.readOnly);
+  for (const button of document.querySelectorAll('button[data-mode]')) {
     button.classList.toggle('is-on', button.dataset.mode === state.mode);
+    if (button.dataset.mode === 'plan') button.textContent = state.readOnly ? t('mode.view2d') : t('mode.plan');
+    if (button.dataset.mode === 'furnish') button.hidden = !!state.readOnly;
   }
+  const more = document.querySelector('[data-action="more-menu"]');
+  if (more) more.hidden = !!state.readOnly;
+  const save = document.querySelector('[data-readonly-tab]');
+  if (save) save.hidden = !state.readOnly;
+  if (ui.readout) ui.readout.hidden = !state.readOnly || state.pickerOpen;
+  paint3dButton();
 }
 
 function renderFloors() {
   const plan = state.store?.getPlan();
   const ordered = plan ? floorsByElevation(plan) : [];
   // M1 hides the add-floor (+) control. Multi-floor editing is a later milestone.
+  ui.floors.dataset.testid = 'floor-switcher';
+  ui.floors.dataset.count = String(ordered.length);
+  ui.floors.dataset.current = state.floorId || '';
   if (ordered.length < 2) {
     ui.floors.hidden = true;
     ui.floors.innerHTML = '';
@@ -591,8 +1098,10 @@ function renderFloors() {
 function updateHistoryButtons() {
   const undo = ui.top.querySelector('[data-action="undo"]');
   const redo = ui.top.querySelector('[data-action="redo"]');
-  if (undo) undo.disabled = !(state.store && (state.store.canUndo() || state.store.isTransacting()));
-  if (redo) redo.disabled = !(state.store && state.store.canRedo() && !state.store.isTransacting());
+  const canUndo = !!(state.store && (state.store.canUndo() || state.store.isTransacting()));
+  const canRedo = !!(state.store && state.store.canRedo() && !state.store.isTransacting());
+  if (undo) undo.disabled = state.readOnly || !canUndo;
+  if (redo) redo.disabled = state.readOnly || !canRedo;
 }
 
 function renderStatus() {
@@ -630,6 +1139,7 @@ function renderStatus() {
 }
 
 function toolHint() {
+  if (state.walkPick) return t('walk.pick');
   if (state.mode === 'furnish' && state.tool === 'library') return t('hint.library');
   const key = {
     wall: 'hint.wall',
@@ -906,6 +1416,7 @@ function renderCanvas() {
   if (!view) return;
   const model = buildModel();
   view.render(model);
+  renderFab();
 }
 
 function buildModel() {
@@ -1163,6 +1674,7 @@ function gapBox(unclosed) {
 }
 
 function cursorFor() {
+  if (state.walkPick) return 'crosshair';
   if (state.gesture?.kind === 'pan') return 'grabbing';
   if (state.space || state.tool === 'pan') return 'grab';
   if ((state.tool === 'door' || state.tool === 'window') && state.openingPreview && !state.openingPreview.ok) return 'not-allowed';
@@ -1213,17 +1725,22 @@ function fitCamera() {
 
 function setTool(tool, silent) {
   if (tool === 'view3d') {
-    void enter3d();
+    void enter3d(false);
     return;
   }
-  if (state.mode === 'view3d') exit3d();
+  if (state.readOnly && EDIT_TOOLS.has(tool)) {
+    toast(t('share.readonly'));
+    return;
+  }
+  const in3d = state.mode === 'view3d' || state.view3dBusy;
+  if (in3d && !silent) void leave3d();
   if (tool === 'library') {
-    state.mode = 'furnish';
+    if (!(in3d && silent)) state.mode = 'furnish';
     state.tool = 'library';
   } else if (tool === 'select' || tool === 'measure' || tool === 'pan') {
     state.tool = tool;
   } else {
-    state.mode = 'plan';
+    if (!(in3d && silent)) state.mode = 'plan';
     state.tool = tool;
   }
   if (tool !== 'wall') {
@@ -1236,16 +1753,22 @@ function setTool(tool, silent) {
 
 function setMode(mode) {
   if (mode === 'view3d') {
-    void enter3d();
+    void enter3d(false);
     return;
   }
-  if (state.mode === 'view3d') exit3d();
+  if (state.readOnly && mode === 'furnish') return;
+  const leaving = state.mode === 'view3d' || state.view3dBusy;
+  if (leaving) void leave3d();
   state.mode = mode;
   if (mode === 'furnish' && !['select', 'library', 'measure', 'pan'].includes(state.tool)) state.tool = 'library';
   if (mode === 'plan' && state.tool === 'library') state.tool = 'select';
   if (mode !== 'plan') {
     state.chain = null;
     state.lengthBuf = '';
+  }
+  if ((state.layout === 'phone' || state.layout === 'tablet') && mode === 'furnish') {
+    state.sheetPage = 'library';
+    if (state.sheetSnap < 1) state.sheetSnap = 1;
   }
   renderAll();
 }
@@ -1364,6 +1887,7 @@ function patchLength() {
 }
 
 function placeWall(world, shift) {
+  if (state.readOnly) return;
   if (!world || !state.store) return;
   const snap = computeSnap(world, shift, null);
   if (!state.chain) {
@@ -1379,6 +1903,7 @@ function placeWall(world, shift) {
 }
 
 function placeAtLength(len) {
+  if (state.readOnly) return;
   if (!state.chain) return;
   const origin = state.chain.points[state.chain.points.length - 1];
   const cursor = state.hoverWorld || { x: origin.x + 1000, y: origin.y };
@@ -1426,6 +1951,7 @@ function bindChainNodes() {
 }
 
 function placeOpening() {
+  if (state.readOnly) return;
   const preview = state.openingPreview;
   if (!preview?.ok || !state.store) return;
   const spec = openingSpec();
@@ -1487,17 +2013,28 @@ function selectFromHit(hit) {
   else if (hit.kind === 'rotate') state.selection = { kind: 'furniture', id: hit.id };
   else state.selection = { kind: hit.kind, id: hit.id };
   state.formError = '';
+  if (state.layout === 'phone' && state.selection && (state.readOnly || state.sheetPage === 'props')) {
+    if (state.readOnly) {
+      state.sheetPage = 'props';
+      if (state.sheetSnap < 1) state.sheetSnap = 1;
+    }
+  }
   renderChrome();
 }
 
 function onPointerDown(event) {
+  const handle = event.target.closest?.('[data-sheet-handle]');
+  if (handle && event.button === 0) {
+    state.sheetDrag = { pointerId: event.pointerId, y: event.clientY, snap: state.sheetSnap };
+    return;
+  }
   state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   if (state.pointers.size >= 2) {
     cancelGesture();
     return;
   }
   const furn = event.target.closest?.('[data-furn]');
-  if (furn && event.button === 0 && !state.pickerOpen) {
+  if (furn && event.button === 0 && !state.pickerOpen && !state.readOnly) {
     event.preventDefault();
     startFurn(furn, event);
     return;
@@ -1511,6 +2048,24 @@ function onPointerDown(event) {
     return;
   }
   if (event.button !== 0 || state.mode === 'view3d') return;
+  if (state.walkPick) {
+    void beginWalkAt(world);
+    return;
+  }
+  if (state.readOnly && state.tool !== 'measure') {
+    const hit = pick(world);
+    state.gesture = {
+      kind: 'select',
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      world,
+      hit,
+      moved: false,
+    };
+    if (hit && hit.kind !== 'node' && hit.kind !== 'rotate') selectFromHit(hit);
+    return;
+  }
   if (state.tool === 'wall' && state.mode === 'plan') {
     state.gesture = { kind: 'wall', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     return;
@@ -1542,11 +2097,24 @@ function onPointerDown(event) {
 }
 
 function onPointerMove(event) {
+  if (state.sheetDrag && state.sheetDrag.pointerId === event.pointerId) {
+    const dy = state.sheetDrag.y - event.clientY;
+    const steps = Math.trunc(dy / 48);
+    if (steps !== 0) {
+      state.sheetSuppressClick = true;
+      const next = Math.max(0, Math.min(2, state.sheetDrag.snap + steps));
+      if (next !== state.sheetSnap) {
+        state.sheetSnap = next;
+        syncSheet();
+      }
+    }
+    return;
+  }
   if (state.pointers.has(event.pointerId)) {
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   }
   if (state.pointers.size >= 2) {
-    pinch();
+    if (state.mode !== 'view3d' && !svg.hidden) pinch();
     return;
   }
   if (state.furnDrag) {
@@ -1589,6 +2157,10 @@ function onPointerMove(event) {
 }
 
 function onPointerUp(event, cancel) {
+  if (state.sheetDrag && state.sheetDrag.pointerId === event.pointerId) {
+    state.sheetDrag = null;
+    return;
+  }
   state.pointers.delete(event.pointerId);
   if (state.pointers.size < 2) state.pinch = null;
   if (state.furnDrag && state.furnDrag.pointerId === event.pointerId) {
@@ -1665,6 +2237,7 @@ function onWheel(event) {
 }
 
 function beginSelectionDrag(hit, world) {
+  if (state.readOnly) return null;
   const floor = ensureFloor();
   if (!hit || !floor) return null;
   if (hit.kind === 'node') {
@@ -1748,6 +2321,7 @@ function finishSelect(gesture) {
 }
 
 function startFurn(button, event) {
+  if (state.readOnly) return;
   const entry = catalogEntry(button.dataset.furn);
   if (!entry || !state.store) return;
   state.furnDrag = { type: entry.type, pointerId: event.pointerId };
@@ -1762,6 +2336,7 @@ function moveFurnGhost(event) {
 }
 
 function finishFurn(drag, event) {
+  if (state.readOnly) return;
   const rect = svg.getBoundingClientRect();
   const inside = event.clientX >= rect.left && event.clientX <= rect.right
     && event.clientY >= rect.top && event.clientY <= rect.bottom;
@@ -1800,7 +2375,7 @@ function finishFurn(drag, event) {
 
 function onKeyDown(event) {
   if (event.code === 'Space') {
-    if (!typing(event.target)) {
+    if (!typing(event.target) && !walkingNow()) {
       state.space = true;
       event.preventDefault();
     }
@@ -1808,12 +2383,48 @@ function onKeyDown(event) {
   }
   if (modalResolver) {
     if (event.key === 'Escape') { event.preventDefault(); closeModal(false); }
-    else if (event.key === 'Enter') { event.preventDefault(); closeModal(true); }
+    else if (event.key === 'Enter' && !ui.modals.querySelector('[data-action="copy-share"]')) {
+      event.preventDefault();
+      closeModal(true);
+    }
     return;
   }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (state.walkPick) {
+      state.walkPick = false;
+      renderAll();
+      return;
+    }
+    if (walkingNow()) {
+      event.stopImmediatePropagation();
+      state.view3d.exitWalk();
+      renderHud();
+      return;
+    }
+    if (state.chain && !state.readOnly) {
+      state.chain = null;
+      state.lengthBuf = '';
+      renderAll();
+      return;
+    }
+    if (state.measure) {
+      state.measure = null;
+      renderCanvas();
+      return;
+    }
+    state.selection = null;
+    renderAll();
+    return;
+  }
+  if (walkingNow()) return;
   if (event.repeat || typing(event.target)) return;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const mod = event.ctrlKey || event.metaKey;
+  if (state.readOnly) {
+    if (key === 't') void enter3d(true);
+    return;
+  }
   if (mod && key === 'z') {
     event.preventDefault();
     if (event.shiftKey) redo();
@@ -1857,23 +2468,6 @@ function onKeyDown(event) {
     deleteSelection();
     return;
   }
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    if (state.chain) {
-      state.chain = null;
-      state.lengthBuf = '';
-      renderAll();
-      return;
-    }
-    if (state.measure) {
-      state.measure = null;
-      renderCanvas();
-      return;
-    }
-    state.selection = null;
-    renderAll();
-    return;
-  }
   if (key === 'f') { flipSwing(); return; }
   if (key === 'r') {
     if (state.selection?.kind === 'furniture' || state.mode === 'furnish') {
@@ -1894,7 +2488,7 @@ function onKeyUp(event) {
 }
 
 function undo() {
-  if (!state.store) return;
+  if (state.readOnly || !state.store) return;
   state.store.undo();
   if (state.chain && state.chain.steps > 0) {
     state.chain.steps -= 1;
@@ -1907,7 +2501,7 @@ function undo() {
 }
 
 function redo() {
-  if (!state.store || state.store.isTransacting()) return;
+  if (state.readOnly || !state.store || state.store.isTransacting()) return;
   state.store.redo();
   state.chain = null;
   state.lengthBuf = '';
@@ -1915,6 +2509,7 @@ function redo() {
 }
 
 function rotateSelected(delta) {
+  if (state.readOnly) return;
   const floor = ensureFloor();
   if (state.selection?.kind !== 'furniture' || !floor) return;
   const item = floor.furniture.find((entry) => entry.id === state.selection.id);
@@ -1946,6 +2541,7 @@ function flipSwing() {
 }
 
 function deleteSelection() {
+  if (state.readOnly) return;
   const sel = state.selection;
   const floor = ensureFloor();
   if (!sel || !floor || !state.store) return;
@@ -1968,6 +2564,7 @@ function deleteSelection() {
 }
 
 function duplicateSelection() {
+  if (state.readOnly) return;
   if (state.selection?.kind !== 'furniture' || !state.store) return;
   const floor = ensureFloor();
   const before = new Set((floor?.furniture || []).map((item) => item.id));
@@ -1978,7 +2575,7 @@ function duplicateSelection() {
 }
 
 function patchSelectedWall(patch) {
-  if (state.selection?.kind !== 'wall' || !state.store) return;
+  if (state.readOnly || state.selection?.kind !== 'wall' || !state.store) return;
   if (patch.virtual === true || patch.thickness != null) {
     const trial = structuredClone(state.store.getPlan());
     const result = patchWall(trial, state.floorId, state.selection.id, patch);
@@ -1997,7 +2594,7 @@ function patchSelectedWall(patch) {
 }
 
 function patchSelectedOpening(patch) {
-  if (state.selection?.kind !== 'opening' || !state.store) return;
+  if (state.readOnly || state.selection?.kind !== 'opening' || !state.store) return;
   const id = state.selection.id;
   const trial = structuredClone(state.store.getPlan());
   const result = updateOpening(trial, state.floorId, id, patch, checkOpeningPlacement);
@@ -2019,6 +2616,7 @@ function patchSelectedOpening(patch) {
 }
 
 function demolishAt(world) {
+  if (state.readOnly) return;
   const hit = pick(world);
   let wallId = null;
   const floor = ensureFloor();
@@ -2147,6 +2745,8 @@ function closeModal(ok) {
 
 function onClick(event) {
   if (modalResolver) {
+    if (event.target.closest('[data-action="copy-share"]')) { void copyShareField(); return; }
+    if (event.target.closest('[data-action="share-close"]')) { closeModal(false); return; }
     if (event.target.closest('[data-action="modal-ok"]')) { closeModal(true); return; }
     if (event.target.closest('[data-action="modal-cancel"]')) { closeModal(false); return; }
     if (event.target.classList?.contains('modal-mask')) { closeModal(false); return; }
@@ -2154,7 +2754,14 @@ function onClick(event) {
   }
   const search = event.target.closest?.('[data-search]');
   if (search) return;
-  const mode = event.target.closest?.('[data-mode]')?.dataset.mode;
+  const page = event.target.closest?.('[data-sheet-page]')?.dataset.sheetPage;
+  if (page) {
+    state.sheetPage = page;
+    if (state.sheetSnap === 0) state.sheetSnap = 1;
+    syncSheet();
+    return;
+  }
+  const mode = event.target.closest?.('button[data-mode]')?.dataset.mode;
   if (mode) { setMode(mode); return; }
   const actionNode = event.target.closest?.('[data-action]');
   if (actionNode) { onAction(actionNode.dataset.action, actionNode, event); return; }
@@ -2176,20 +2783,58 @@ function onClick(event) {
 }
 
 function onAction(action, node, event) {
-  if (action === 'plan-menu' || action === 'file-menu') {
-    toggleMenu(action === 'plan-menu' ? 'plan' : 'file');
+  if (action === 'plan-menu' || action === 'file-menu' || action === 'more-menu') {
+    const name = action === 'plan-menu' ? 'plan' : action === 'file-menu' ? 'file' : 'more';
+    toggleMenu(name);
     event?.stopPropagation();
     return;
   }
   closeMenus();
+  if (state.readOnly && READONLY_BLOCK.has(action)) {
+    toast(t('share.readonly'));
+    return;
+  }
   if (action === 'undo') undo();
   else if (action === 'redo') redo();
-  else if (action === 'share' || action === 'export-png') toast(t('toast.soon'));
+  else if (action === 'share') void openShareDialog();
+  else if (action === 'export-png') void exportPng();
   else if (action === 'export-json') exportJSON();
   else if (action === 'import-json') ui.file.click();
   else if (action === 'lang') void toggleLang();
   else if (action === 'view3d') void enter3d(false);
   else if (action === 'inspector') ui.inspector.classList.toggle('is-open');
+  else if (action === 'help') openHelp();
+  else if (action === 'tool-measure') setTool('measure');
+  else if (action === 'save-copy') void saveSharedCopy();
+  else if (action === 'cutaway') {
+    state.cutaway = !state.cutaway;
+    try { state.view3d?.setCutaway?.(state.cutaway); } catch { /* shader uniform is best-effort */ }
+    renderHud();
+  } else if (action === 'walk') {
+    if (walkingNow()) {
+      state.view3d.exitWalk();
+      renderHud();
+      return;
+    }
+    state.walkPick = true;
+    toast(t('walk.pick'));
+    if (state.mode === 'view3d') setMode('plan');
+    else renderAll();
+  } else if (action === 'reset-view') {
+    try { state.view3d?.resetView?.(); } catch { /* orbit stays where it is */ }
+  } else if (action === 'back-2d') setMode('plan');
+  else if (action === 'sheet-cycle') {
+    if (state.sheetSuppressClick) {
+      state.sheetSuppressClick = false;
+      return;
+    }
+    state.sheetSnap = (state.sheetSnap + 1) % 3;
+    syncSheet();
+  } else if (action === 'sheet-props') {
+    state.sheetPage = 'props';
+    if (state.sheetSnap < 1) state.sheetSnap = 1;
+    syncSheet();
+  } else if (action === 'rotate-selection') rotateSelected(state.layout === 'phone' ? 90 : 15);
   else if (action === 'show-picker') void showPicker();
   else if (action === 'open-plan') openStored(node.dataset.id);
   else if (action === 'copy-plan') copyPlan(node.dataset.id);
@@ -2213,6 +2858,7 @@ function onAction(action, node, event) {
 
 function onChangeInput(event) {
   const el = event.target;
+  if (state.readOnly) return;
   if (el.dataset?.pref) { applyPref(el.dataset.pref, el); return; }
   const field = el.dataset?.field;
   if (!field || !state.store) return;
@@ -2237,7 +2883,8 @@ function onInput(event) {
   const search = event.target.closest?.('[data-search]');
   if (!search) return;
   const query = search.value.trim().toLowerCase();
-  for (const item of ui.side.querySelectorAll('[data-furn]')) {
+  const root = search.closest('.sheet-page') || search.closest('.sidepanel') || ui.side;
+  for (const item of root.querySelectorAll('[data-furn]')) {
     const name = (item.dataset.name || '').toLowerCase();
     item.hidden = !!query && !name.includes(query);
   }
@@ -2270,7 +2917,7 @@ function selectFloor(floorId) {
 }
 
 function toggleMenu(name) {
-  const menu = ui.top.querySelector(`[data-menu="${name}"]`);
+  const menu = document.querySelector(`[data-menu="${name}"]`);
   if (!menu) return;
   const open = menu.hidden;
   closeMenus();
@@ -2280,7 +2927,7 @@ function toggleMenu(name) {
 }
 
 function closeMenus() {
-  for (const menu of ui.top.querySelectorAll('[data-menu]')) menu.hidden = true;
+  for (const menu of document.querySelectorAll('[data-menu]')) menu.hidden = true;
 }
 
 function fillPlanMenu(menu) {
@@ -2309,6 +2956,7 @@ function formatStamp(ts) {
 }
 
 async function showPicker() {
+  if (state.readOnly) return;
   if (state.store && state.armed) saveNow();
   state.pickerOpen = true;
   syncPicker();
@@ -2481,6 +3129,10 @@ async function deletePlan(id) {
 }
 
 async function importFile(file) {
+  if (state.readOnly) {
+    toast(t('share.readonly'));
+    return;
+  }
   let text = '';
   try { text = await file.text(); } catch { toast(t('toast.saveFail'), 'danger'); return; }
   const result = importPlanJSON(text);
@@ -2503,7 +3155,7 @@ function exportJSON() {
 }
 
 function scheduleSave() {
-  if (!state.armed || state.pickerOpen || !state.store || state.store.isTransacting()) return;
+  if (state.readOnly || !state.armed || state.pickerOpen || !state.store || state.store.isTransacting()) return;
   state.saveState = 'dirty';
   renderStatus();
   window.clearTimeout(state.saveTimer);
@@ -2511,7 +3163,7 @@ function scheduleSave() {
 }
 
 function saveNow() {
-  if (!state.store || state.pickerOpen || state.store.isTransacting()) return;
+  if (state.readOnly || !state.store || state.pickerOpen || state.store.isTransacting()) return;
   state.saveState = 'saving';
   try {
     state.store.touch(Date.now());
@@ -2525,7 +3177,7 @@ function saveNow() {
     state.saveState = 'saved';
     if (result.warn && !state.quotaToasted) {
       state.quotaToasted = true;
-      toast(t('toast.quota'), 'warn');
+      toast(t('toast.quota'), 'warn', { label: t('toast.backup'), run: exportJSON });
     }
   } catch {
     state.saveState = 'error';
@@ -2570,72 +3222,101 @@ async function probe3d() {
   try {
     const mod = await import('../view3d/index.js');
     state.view3dMod = mod;
-    if (typeof mod.isWebGLAvailable === 'function') {
-      state.webgl = mod.isWebGLAvailable();
-      if (state.webgl && state.webgl.ok === false) {
-        for (const button of document.querySelectorAll('[data-action="view3d"], [data-mode="view3d"]')) {
-          button.disabled = true;
-          button.title = state.webgl.reason || '';
-        }
-      }
-    }
+    if (typeof mod.isWebGLAvailable === 'function') state.webgl = mod.isWebGLAvailable();
   } catch {
     state.view3dMod = null;
   }
+  paint3dButton();
 }
 
 async function enter3d(fromKey) {
+  if (state.view3dBusy) return;
   if (fromKey && state.mode === 'view3d') return;
-  if (state.webgl && state.webgl.ok === false) return;
-  let mod = state.view3dMod;
-  if (!mod) {
-    try {
-      mod = await import('../view3d/index.js');
-      state.view3dMod = mod;
-    } catch {
-      mod = null;
-    }
-  }
-  if (!mod || typeof mod.createView3D !== 'function') {
-    toast(t('toast.view3dPending'));
+  if (state.mode === 'view3d' && state.view3d) {
+    try { state.view3d.setCurrentFloor?.(state.floorId); } catch { /* highlight only */ }
+    syncViewSelection(true);
+    renderChrome();
     return;
   }
+  if (state.webgl && state.webgl.ok === false) {
+    toast(state.webgl.reason || t('view3d.unavailable'));
+    return;
+  }
+  const gen = ++enterGen;
+  state.view3dBusy = true;
+  paint3dButton();
+  const reduced = prefersReduced();
   const host = document.getElementById('view3d-host');
   try {
+    let mod = state.view3dMod;
+    if (!mod) {
+      mod = await import('../view3d/index.js');
+      state.view3dMod = mod;
+    }
+    if (gen !== enterGen) return;
+    if (!mod || typeof mod.createView3D !== 'function') {
+      toast(t('toast.view3dPending'));
+      return;
+    }
+    if (typeof mod.isWebGLAvailable === 'function') state.webgl = mod.isWebGLAvailable();
+    if (state.webgl && state.webgl.ok === false) {
+      toast(state.webgl.reason || t('view3d.unavailable'));
+      return;
+    }
     if (!state.view3d) {
       state.view3d = await mod.createView3D({
         container: host,
-        getPlan: () => state.store.getPlan(),
+        getPlan: () => state.store?.getPlan() ?? { floors: [] },
         floorId: state.floorId,
-        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-        onSelectFurniture: (id) => {
-          state.selection = id ? { kind: 'furniture', id } : null;
-          state.panelKey = '';
-          renderChrome();
-        },
+        reducedMotion: reduced,
+        onSelectFurniture: onView3dSelect,
       });
     }
+    if (gen !== enterGen) return;
     state.mode = 'view3d';
-    host.hidden = false;
+    state.walkPick = false;
+    if (host) host.hidden = false;
     svg.hidden = true;
-    await state.view3d.enter?.({ animate: true });
+    renderChrome();
+    await state.view3d.enter?.({ animate: !reduced });
+    if (gen !== enterGen) return;
     state.view3d.setCurrentFloor?.(state.floorId);
-    state.view3d.select?.(state.selection?.kind === 'furniture' ? state.selection.id : null);
+    if (state.cutaway) state.view3d.setCutaway?.(true);
+    syncViewSelection(true);
     renderChrome();
   } catch {
-    if (host) host.hidden = true;
-    svg.hidden = false;
-    state.mode = 'plan';
-    toast(t('toast.view3dPending'));
+    if (gen === enterGen) {
+      if (host) host.hidden = true;
+      svg.hidden = false;
+      if (state.mode === 'view3d') state.mode = 'plan';
+      toast(t('toast.view3dPending'));
+      renderChrome();
+    }
+  } finally {
+    if (gen === enterGen) {
+      state.view3dBusy = false;
+      paint3dButton();
+    }
   }
 }
 
-function exit3d() {
-  try { state.view3d?.exit?.(); } catch { /* 2D remains the editor */ }
+async function leave3d() {
+  const gen = ++enterGen;
+  state.view3dBusy = false;
+  paint3dButton();
+  const reduced = prefersReduced();
+  try {
+    if (state.view3d) await state.view3d.exit?.({ animate: !reduced });
+  } catch { /* 2D remains the editor */ }
+  if (gen !== enterGen) return;
   const host = document.getElementById('view3d-host');
   if (host) host.hidden = true;
-  svg.hidden = false;
-  if (state.mode === 'view3d') state.mode = 'plan';
+  if (svg) svg.hidden = false;
+  renderCanvas();
+}
+
+function exit3d() {
+  void leave3d();
 }
 
 function toast(text, tone = '', action = null, ms = 2600) {

@@ -24,4 +24,4 @@
 - 文件：`lz-string/lz-string.js`。
 - 改动：去掉 UMD 尾部，改为 ESM，导出 `compressToEncodedURIComponent`、`decompressFromEncodedURIComponent` 和默认导出。压缩算法未改。分享链接在没有 `CompressionStream('deflate-raw')` 时使用它。
 
-`three` 不在本目录。以后由 `index.html` 里的 import map 指向 `./vendor/three/three.module.js`。
+`three`（0.186.1，MIT）在 `vendor/three/`。`index.html` 的 import map 指向 `./vendor/three/three.module.js`，只在进入三维视图时加载。

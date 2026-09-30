@@ -132,8 +132,9 @@ createView3D({ container, getPlan, floorId, reducedMotion=false, onSelectFurnitu
 调试扩展（契约之外，集成时可用可不用）：
 
 - `setFloorVisible(floorId, boolean)`
-- `debugState()` 相机、朝向、楼层子节点名
-- `debugRay(ox, oy, oz, dx, dy, dz)` 前 12 个命中
+- `debugState()` 相机、朝向、`selectedId`、楼层子节点名
+- `debugRay(ox, oy, oz, dx, dy, dz)` 前 12 个命中（含 `point`，米）
+- `debugProject(xMm, yMm, yMeters)` 把平面坐标投到视口，供点选对齐
 
 调试页把视图放在 `window.__v3d`，并设置 `window.__HOMESIM_DEBUG__ = { renderInfo, view }`。查询参数：`?t=apt-2br`（默认）、`?fixture=two-floor-stair`、`?stress=100`、`?noshadow`、`?reduced`。
 

@@ -10,9 +10,11 @@ html,
 body {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
+  position: relative;
   display: grid;
   grid-template-columns: var(--toolrail-w) var(--sidepanel-w) minmax(0, 1fr) var(--inspector-w);
   grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--statusbar-h);
@@ -51,6 +53,8 @@ body {
 .sidepanel {
   grid-area: side;
   width: var(--sidepanel-w);
+  min-height: 0;
+  overflow: auto;
   padding: var(--sp-3);
   background: var(--paper-1);
   border-right: 1px solid var(--line-1);
@@ -61,15 +65,15 @@ body {
   position: relative;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
   background: var(--paper-0);
 }
 
 .inspector {
   grid-area: inspector;
   width: var(--inspector-w);
+  min-height: 0;
+  overflow: auto;
   padding: var(--sp-3);
   background: var(--paper-1);
   border-left: 1px solid var(--line-1);
@@ -117,6 +121,33 @@ body {
   color: var(--ink-2);
   font-family: var(--font-num);
   font-size: var(--fs-13);
+}
+
+/* 900–1199: inspector becomes a collapsible overlay. Below 900 stays on the grid
+   (narrower phones are a later layout). */
+@media (max-width: 1199px) and (min-width: 900px) {
+  body {
+    grid-template-columns: var(--toolrail-w) var(--sidepanel-w) minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar topbar"
+      "tools side canvas"
+      "status status status";
+  }
+
+  .inspector {
+    position: absolute;
+    top: var(--topbar-h);
+    right: 0;
+    bottom: var(--statusbar-h);
+    z-index: var(--z-panel);
+    transform: translateX(100%);
+    transition: transform var(--dur-base) var(--ease-out);
+    box-shadow: var(--shadow-3);
+  }
+
+  .inspector.is-open {
+    transform: translateX(0);
+  }
 }
 
 html[data-app="error"] .ready-card p {

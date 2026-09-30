@@ -27,3 +27,19 @@ export async function loadLocale(lang = 'zh') {
 export function translate(messages, key) {
   return messages?.[key] ?? key;
 }
+
+/**
+ * Replace `{name}` placeholders. Missing messages fall back to the key.
+ * @param {Record<string, string>|null|undefined} messages
+ * @param {string} key
+ * @param {Record<string, string|number>|null} [vars]
+ */
+export function formatMessage(messages, key, vars) {
+  let text = messages?.[key] ?? key;
+  if (vars) {
+    for (const [name, value] of Object.entries(vars)) {
+      text = text.replaceAll(`{${name}}`, String(value));
+    }
+  }
+  return text;
+}

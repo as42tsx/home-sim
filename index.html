@@ -4,33 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>家装模拟器 Home Sim</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23292524'/%3E%3Cpath d='M6 14.5 16 6l10 8.5V26H6z' fill='none' stroke='%23faf7f2' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles/tokens.css">
   <link rel="stylesheet" href="styles/base.css">
-  <!--
-    Later milestone: import map for three.js. Not vendored in M1.
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "./vendor/three/three.module.js"
-      }
-    }
-    </script>
-  -->
+  <link rel="stylesheet" href="styles/editor.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }</script>
 </head>
 <body>
-  <header class="topbar"><span class="region-label">顶栏</span></header>
-  <nav class="toolrail" aria-label="工具"><span class="region-label">工具</span></nav>
-  <aside class="sidepanel"><span class="region-label">侧栏</span></aside>
-  <main class="canvas">
-    <div class="ready-card">
-      <h1>家装模拟器 · 骨架已就绪</h1>
-      <p data-status>正在加载模块…</p>
-    </div>
-    <div class="floor-switcher" hidden>楼层</div>
-  </main>
-  <aside class="inspector"><span class="region-label">属性</span></aside>
-  <footer class="statusbar"><span class="region-label">状态</span></footer>
-  <nav class="tabbar" aria-label="底部标签"><span class="region-label">标签</span></nav>
+  <header class="topbar"></header>
+  <nav class="toolrail" aria-label="工具"></nav>
+  <aside class="sidepanel"></aside>
+  <main class="canvas"></main>
+  <aside class="inspector"></aside>
+  <footer class="statusbar"></footer>
+  <nav class="tabbar" aria-label="模式"></nav>
   <noscript>请启用 JavaScript 后再使用家装模拟器。本页不需要账号，户型数据留在你的浏览器里。</noscript>
   <script type="module" src="src/app.js"></script>
 </body>

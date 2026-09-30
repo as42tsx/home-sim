@@ -1,0 +1,2684 @@
+// @browser-only
+/**
+ * Desktop editor shell: template picker, tools, inspectors, autosave.
+ * The 2D canvas lives in src/plan2d. 3D is loaded only when that module
+ * exports a view constructor.
+ */
+
+import { suiteNetM2, aboutNetM2, planNetM2 } from '../editor/area.js';
+import { shouldCloseChain, segmentTooShort } from '../editor/chain.js';
+import { clonePlanFresh } from '../editor/clone.js';
+import { warningIds } from '../editor/collision.js';
+import {
+  bakeCommand,
+  furnitureAddCommand,
+  furnitureDeleteCommand,
+  furnitureDuplicateCommand,
+  furniturePatchCommand,
+  nodesMoveCommand,
+  openingAddCommand,
+  openingDeleteCommand,
+  openingPatchCommand,
+  renameCommand,
+  roomPatchCommand,
+  wallAddCommand,
+  wallDeleteCommand,
+  wallDemolishCommand,
+  wallPatchCommand,
+} from '../editor/commands.js';
+import { previewDemolish } from '../editor/demolish.js';
+import { angleDeg, escapeHtml, formatAngle, formatAreaM2, formatAreaMm2, formatMm } from '../editor/format.js';
+import { snapFurnitureToWall } from '../editor/furniture-snap.js';
+import { hitTest, rotateHandlePoint } from '../editor/hit.js';
+import { MATERIALS, ROOM_TYPES, roomFillVar } from '../editor/materials.js';
+import { previewOpening } from '../editor/opening-preview.js';
+import { resolveSnap } from '../editor/snap.js';
+import { createEditorStore } from '../editor/store.js';
+import { patchWall, updateOpening } from '../editor/structure.js';
+import { roomThumbModel, thumbView } from '../editor/thumb.js';
+import { wallQuad } from '../editor/wall-shape.js';
+import { CATALOG, catalogCategories, catalogEntry } from '../furniture/catalog.js';
+import { formatMessage, loadLocale } from '../i18n/index.js';
+import { exportPlanJSON, importPlanJSON } from '../io/json.js';
+import { WALL_THICKNESS } from '../model/constants.js';
+import { createEmptyPlan, floorBelow, floorsByElevation, getFloor } from '../model/document.js';
+import { uniqueId } from '../model/ids.js';
+import { validatePlan } from '../model/validate.js';
+import { checkOpeningPlacement, openingClearance } from '../openings/clearance.js';
+import { mountPlanView } from '../plan2d/view.js';
+import { deriveRooms } from '../rooms/index.js';
+import {
+  planKey,
+  readIndex,
+  readLastId,
+  readPlan,
+  readPrefs,
+  removePlan,
+  renameStored,
+  sortPlans,
+  writePlan,
+  writePrefs,
+} from '../store/index.js';
+
+const CAT_KEYS = {
+  卧室: 'cat.bed',
+  客厅: 'cat.living',
+  餐厅: 'cat.dining',
+  书房: 'cat.study',
+  厨房: 'cat.kitchen',
+  卫浴: 'cat.bath',
+  装饰: 'cat.decor',
+};
+
+const TOOL_KEYS = {
+  select: 'V',
+  wall: 'W',
+  room: 'R',
+  door: 'D',
+  window: 'N',
+  demolish: 'X',
+  measure: 'M',
+  pan: 'H',
+};
+
+const state = {
+  prefs: null,
+  messages: {},
+  store: null,
+  floorId: null,
+  mode: 'plan',
+  tool: 'select',
+  selection: null,
+  camera: { x: 0, y: 0, k: 0.05 },
+  chain: null,
+  lengthBuf: '',
+  shift: false,
+  space: false,
+  snap: null,
+  hoverWorld: null,
+  openingPreview: null,
+  openingSwing: 'in',
+  measure: null,
+  gesture: null,
+  furnDrag: null,
+  pointers: new Map(),
+  pinch: null,
+  pickerOpen: false,
+  templates: [],
+  armed: false,
+  quiet: false,
+  saveState: 'saved',
+  saveTimer: 0,
+  quotaToasted: false,
+  formError: '',
+  panelKey: '',
+  condemnedId: null,
+  shakeId: null,
+  mergeId: null,
+  hintTimer: 0,
+  pillTimer: 0,
+  toastTimer: 0,
+  view3d: null,
+  view3dMod: null,
+  webgl: null,
+  camToken: 0,
+  refit: false,
+};
+
+let storage = null;
+let view = null;
+let svg = null;
+let modalResolver = null;
+let debugRef = null;
+
+const ui = {};
+
+function t(key, vars) {
+  return formatMessage(state.messages, key, vars);
+}
+
+function memoryStorage() {
+  const map = new Map();
+  return {
+    get length() { return map.size; },
+    key(index) { return [...map.keys()][index] ?? null; },
+    getItem(key) { return map.has(key) ? map.get(key) : null; },
+    setItem(key, value) { map.set(String(key), String(value)); },
+    removeItem(key) { map.delete(key); },
+  };
+}
+
+function typing(el) {
+  if (!el?.tagName) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || !!el.isContentEditable;
+}
+
+export function mountApp(debug) {
+  debugRef = debug;
+  try {
+    storage = window.localStorage;
+    storage.getItem('homesim:prefs');
+  } catch {
+    storage = memoryStorage();
+  }
+
+  ui.top = document.querySelector('.topbar');
+  ui.tools = document.querySelector('.toolrail');
+  ui.side = document.querySelector('.sidepanel');
+  ui.inspector = document.querySelector('.inspector');
+  ui.status = document.querySelector('.statusbar');
+  ui.tabs = document.querySelector('.tabbar');
+  ui.canvas = document.querySelector('.canvas');
+  svg = document.querySelector('.plan-svg');
+  if (!svg) {
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'plan-svg');
+    svg.dataset.testid = 'canvas';
+    ui.canvas.prepend(svg);
+  }
+  ensureChrome();
+  view = mountPlanView(svg);
+  bindDebug();
+  bindEvents();
+  void boot();
+}
+
+function ensureChrome() {
+  ui.top.innerHTML = `
+    <div class="brand" aria-hidden="true">家</div>
+    <div class="name-wrap">
+      <input class="name-input" data-testid="plan-name" data-plan-name aria-label="方案名" />
+      <button type="button" class="icon-btn" data-menu-button="plan" data-action="plan-menu" aria-label="方案列表">▾</button>
+      <div class="menu" data-menu="plan" hidden></div>
+    </div>
+    <div class="seg" role="tablist">
+      <button type="button" data-mode="plan" data-i18n="mode.plan">户型</button>
+      <button type="button" data-mode="furnish" data-i18n="mode.furnish">布置</button>
+      <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>
+    </div>
+    <button type="button" class="icon-btn" data-action="undo" data-i18n-title="action.undo" aria-label="撤销">↩</button>
+    <button type="button" class="icon-btn" data-action="redo" data-i18n-title="action.redo" aria-label="重做">↪</button>
+    <button type="button" class="btn" data-action="share"><span data-i18n="action.share">分享</span></button>
+    <div class="menu-wrap">
+      <button type="button" class="btn" data-menu-button="file" data-action="file-menu"><span data-i18n="action.file">文件</span></button>
+      <div class="menu right" data-menu="file" hidden>
+        <button type="button" class="item" data-action="export-json"><span data-i18n="action.exportJson">导出 JSON</span></button>
+        <button type="button" class="item" data-action="import-json"><span data-i18n="action.importJson">导入 JSON</span></button>
+        <button type="button" class="item" data-action="export-png"><span data-i18n="action.exportPng">导出 PNG</span></button>
+      </div>
+    </div>
+    <button type="button" class="btn ghost" data-action="lang" data-i18n="action.lang">中 / EN</button>
+    <span class="top-spacer"></span>
+    <button type="button" class="btn inspector-toggle" data-action="inspector" data-i18n="action.inspector">属性</button>
+    <button type="button" class="btn primary" data-action="view3d"><span data-i18n="action.view3d">看 3D</span></button>`;
+
+  ui.tools.innerHTML = ['select', 'wall', 'room', 'door', 'window', 'demolish', 'measure', 'pan', 'library']
+    .map((name) => {
+      const key = TOOL_KEYS[name];
+      return `<button type="button" class="tool" data-tool="${name}">${toolIcon(name)}${key ? `<i>${key}</i>` : ''}</button>`;
+    })
+    .join('');
+
+  ui.status.innerHTML = `
+    <span data-cursor class="num"></span>
+    <span data-zoom class="num"></span>
+    <span data-snap></span>
+    <span data-tool-hint></span>
+    <span class="sp"></span>
+    <span data-save></span>`;
+
+  ui.tabs.innerHTML = `
+    <button type="button" data-mode="plan" data-i18n="mode.plan">户型</button>
+    <button type="button" data-mode="furnish" data-i18n="mode.furnish">布置</button>
+    <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>`;
+
+  if (!ui.canvas.querySelector('#view3d-host')) {
+    const host = document.createElement('div');
+    host.id = 'view3d-host';
+    host.hidden = true;
+    ui.canvas.append(host);
+  }
+  ui.floors = ensureDiv('floors', 'data-floors');
+  ui.scale = ensureDiv('scalebar', 'data-scale');
+  ui.scale.innerHTML = '<span data-scale-label></span><i data-scale-line></i>';
+  ui.hint = ensureDiv('hint', 'data-hint');
+  ui.hint.dataset.testid = 'hint';
+  ui.hint.hidden = true;
+  ui.pill = ensureDiv('float-pill', 'data-pill');
+  ui.pill.hidden = true;
+  ui.picker = ensureDiv('picker', 'data-picker');
+  ui.picker.dataset.testid = 'picker';
+  ui.picker.hidden = true;
+  ui.banner = ensureDiv('banner', 'data-banner');
+  ui.banner.hidden = true;
+  ui.toasts = ensureDiv('toast-host', 'data-toasts');
+  ui.modals = ensureDiv('modal-host', 'data-modals');
+  ui.ghost = ensureDiv('drag-ghost', 'data-ghost');
+  ui.ghost.hidden = true;
+  ui.file = document.createElement('input');
+  ui.file.type = 'file';
+  ui.file.accept = 'application/json,.json';
+  ui.file.hidden = true;
+  document.body.append(ui.file);
+}
+
+function ensureDiv(className, attr) {
+  let node = ui.canvas.querySelector(`.${className.split(' ')[0]}`);
+  if (!node) {
+    node = document.createElement('div');
+    node.className = className;
+    ui.canvas.append(node);
+  }
+  if (attr) node.setAttribute(attr, '');
+  return node;
+}
+
+function toolIcon(name) {
+  const common = 'viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"';
+  const paths = {
+    select: '<path d="M5 4l6 16 2.2-6.2L19 12z"/>',
+    wall: '<path d="M4 16l8-8 8 8"/><path d="M8 16h8"/>',
+    room: '<rect x="5" y="5" width="14" height="14" rx="1"/>',
+    door: '<path d="M8 19V6h8v13"/><path d="M8 19a8 8 0 0 1 8-8"/>',
+    window: '<path d="M4 8h16M4 12h16M4 16h16"/>',
+    demolish: '<path d="M5 17h14" stroke-dasharray="2 2"/><path d="M8 7l8 8M16 7l-8 8"/>',
+    measure: '<path d="M5 19L19 5"/><path d="M7 17l-2 2M17 7l2-2"/>',
+    pan: '<path d="M12 4v16M4 12h16M12 4l-2 2M12 4l2 2M12 20l-2-2M12 20l2-2M4 12l2-2M4 12l2 2M20 12l-2-2M20 12l-2 2"/>',
+    library: '<rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/>',
+  };
+  return `<svg ${common}>${paths[name] || ''}</svg>`;
+}
+
+function bindDebug() {
+  debugRef.getPlan = () => state.store?.getPlan() ?? null;
+  debugRef.currentFloorId = () => state.floorId;
+  debugRef.renderInfo = () => {
+    if (state.view3d && typeof state.view3d.renderInfo === 'function') return state.view3d.renderInfo();
+    return { note: '3D not loaded' };
+  };
+  debugRef.worldToScreen = (x, y) => {
+    const wx = typeof x === 'object' ? x.x : x;
+    const wy = typeof x === 'object' ? x.y : y;
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: rect.left + state.camera.x + wx * state.camera.k,
+      y: rect.top + state.camera.y + wy * state.camera.k,
+    };
+  };
+  debugRef.setCamera = setCamera;
+  debugRef.setTool = (name) => setTool(name);
+  debugRef.fit = () => {
+    state.camToken += 1;
+    fitCamera();
+  };
+  debugRef.store = null;
+}
+
+function bindEvents() {
+  document.addEventListener('click', onClick);
+  document.addEventListener('change', onChangeInput);
+  document.addEventListener('input', onInput);
+  window.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', (event) => onPointerUp(event, false));
+  window.addEventListener('pointercancel', (event) => onPointerUp(event, true));
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('storage', onStorage);
+  svg.addEventListener('wheel', onWheel, { passive: false });
+  ui.file.addEventListener('change', () => {
+    const file = ui.file.files?.[0];
+    ui.file.value = '';
+    if (file) void importFile(file);
+  });
+  ui.top.querySelector('[data-plan-name]').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    }
+  });
+  ui.top.querySelector('[data-plan-name]').addEventListener('change', (event) => {
+    const name = event.target.value.trim();
+    if (!name || !state.store) return;
+    if (name === state.store.getPlan().meta.name) return;
+    state.store.dispatch(renameCommand(name));
+  });
+  const observer = new ResizeObserver(() => {
+    if (state.refit) fitCamera();
+    else renderCanvas();
+    try { state.view3d?.resize?.(); } catch { /* 3D resize is best-effort */ }
+  });
+  observer.observe(ui.canvas);
+}
+
+async function boot() {
+  state.prefs = readPrefs(storage);
+  try {
+    state.messages = await loadLocale(state.prefs.lang);
+  } catch {
+    state.messages = {};
+  }
+  document.documentElement.lang = state.prefs.lang === 'en' ? 'en' : 'zh-CN';
+  document.title = t('app.title');
+  renderStatic();
+  const lastId = readLastId(storage);
+  const last = lastId ? readPlan(storage, lastId) : null;
+  const lastErrors = last ? validatePlan(last).filter((item) => item.severity !== 'warning') : [{ code: 'missing' }];
+  if (last && !lastErrors.length) {
+    adopt(last, { save: false, arm: true });
+  } else {
+    state.pickerOpen = true;
+    syncPicker();
+    renderAll();
+  }
+  await refreshPicker();
+  await probe3d();
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      if (!state.pickerOpen) fitCamera();
+      resolve();
+    });
+  });
+  document.documentElement.dataset.app = 'ready';
+}
+
+function adopt(plan, opts = {}) {
+  state.pickerOpen = false;
+  syncPicker();
+  state.chain = null;
+  state.lengthBuf = '';
+  state.selection = null;
+  state.measure = null;
+  state.condemnedId = null;
+  state.formError = '';
+  state.quiet = true;
+  if (!state.store) {
+    state.store = createEditorStore(plan);
+    state.store.subscribe(onStore);
+    debugRef.store = state.store;
+  } else {
+    state.store.replace(structuredClone(plan));
+  }
+  state.quiet = false;
+  const ordered = floorsByElevation(state.store.getPlan());
+  state.floorId = ordered[0]?.id ?? null;
+  state.armed = opts.arm !== false;
+  state.saveState = 'saved';
+  if (opts.tool) setTool(opts.tool, true);
+  renderAll();
+  scheduleFit();
+  if (opts.save) saveNow();
+  if (opts.hint) showHint(opts.hint);
+  if (opts.multiToast && (plan.floors?.length || 0) > 1) {
+    toast(t('toast.multi', { n: plan.floors.length }));
+  }
+}
+
+function scheduleFit() {
+  const token = state.camToken;
+  requestAnimationFrame(() => {
+    if (token !== state.camToken) return;
+    fitCamera();
+  });
+}
+
+function setCamera(cam = {}) {
+  state.camToken += 1;
+  if (cam.pxPerMm != null) state.camera.k = cam.pxPerMm;
+  if (cam.k != null) state.camera.k = cam.k;
+  if (cam.x != null) state.camera.x = cam.x;
+  if (cam.y != null) state.camera.y = cam.y;
+  renderCanvas();
+  renderStatus();
+}
+
+function onStore(_plan, change) {
+  if (state.view3d && change) {
+    try { state.view3d.update(change); } catch { /* keep 2D usable if the view rejects a change */ }
+  }
+  if (state.quiet) return;
+  renderCanvas();
+  renderStatus();
+  renderName();
+  if (!state.store?.isTransacting()) {
+    renderChrome();
+    scheduleSave();
+  } else {
+    updateHistoryButtons();
+  }
+}
+
+function ensureFloor() {
+  if (!state.store) return null;
+  const plan = state.store.getPlan();
+  const ordered = floorsByElevation(plan);
+  if (!ordered.length) {
+    state.floorId = null;
+    return null;
+  }
+  if (!ordered.some((floor) => floor.id === state.floorId)) state.floorId = ordered[0].id;
+  return getFloor(plan, state.floorId);
+}
+
+function liveDerive(floorId) {
+  try {
+    return deriveRooms(state.store.getPlan(), floorId, {
+      previousDerived: state.store.previousDerived(floorId),
+    });
+  } catch {
+    return { rooms: [], derived: [], unclosed: { endpoints: [], gap: null } };
+  }
+}
+
+function renderAll() {
+  renderStatic();
+  renderCanvas();
+  renderChrome();
+  renderStatus();
+  renderName();
+}
+
+function renderStatic() {
+  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
+  for (const node of document.querySelectorAll('[data-i18n-title]')) node.title = t(node.dataset.i18nTitle);
+  const bannerText = ui.banner.querySelector('[data-banner-text]');
+  if (!bannerText && ui.banner.childElementCount === 0) {
+    ui.banner.innerHTML = `
+      <span data-banner-text></span>
+      <button type="button" class="btn" data-action="conflict-load"></button>
+      <button type="button" class="btn" data-action="conflict-keep"></button>`;
+  }
+  const text = ui.banner.querySelector('[data-banner-text]');
+  if (text) text.textContent = t('conflict.text');
+  const load = ui.banner.querySelector('[data-action="conflict-load"]');
+  const keep = ui.banner.querySelector('[data-action="conflict-keep"]');
+  if (load) load.textContent = t('conflict.load');
+  if (keep) keep.textContent = t('conflict.keep');
+}
+
+function renderName() {
+  const input = ui.top.querySelector('[data-plan-name]');
+  if (!input) return;
+  const name = state.store?.getPlan()?.meta?.name || '';
+  if (document.activeElement !== input) input.value = name;
+  input.placeholder = t('plan.untitled');
+  input.disabled = !state.store;
+}
+
+function syncPicker() {
+  ui.picker.hidden = !state.pickerOpen;
+  document.body.classList.toggle('is-picker', state.pickerOpen);
+}
+
+function renderChrome() {
+  const key = panelSignature();
+  if (key !== state.panelKey) {
+    state.panelKey = key;
+    ui.side.innerHTML = sideHTML();
+    ui.inspector.innerHTML = inspectorHTML();
+    patchLength();
+  }
+  renderTools();
+  renderModes();
+  renderFloors();
+  updateHistoryButtons();
+}
+
+function panelSignature() {
+  const floor = state.store ? ensureFloor() : null;
+  const live = state.store && state.floorId ? liveDerive(state.floorId) : null;
+  const rooms = (live?.rooms || []).map((room) => `${room.id}:${room.name}:${room.type}:${room.floor}`).join(',');
+  const areas = (live?.derived || []).map((face) => `${face.roomId}:${Math.round(face.area || 0)}`).join(',');
+  const sel = state.selection ? `${state.selection.kind}:${state.selection.id}` : '';
+  let extra = '';
+  if (floor && state.selection?.kind === 'wall') {
+    const wall = floor.walls.find((item) => item.id === state.selection.id);
+    if (wall) extra = `${wall.thickness}:${wall.virtual}:${wall.bearing}:${wall.exterior}:${wall.height}:${wall.demolished}`;
+  }
+  if (floor && state.selection?.kind === 'opening') {
+    const opening = floor.openings.find((item) => item.id === state.selection.id);
+    if (opening) extra = `${opening.kind}:${opening.width}:${opening.hinge}:${opening.swing}:${opening.t}`;
+  }
+  if (floor && state.selection?.kind === 'furniture') {
+    const item = floor.furniture.find((entry) => entry.id === state.selection.id);
+    if (item) extra = `${item.name}:${item.w}:${item.d}:${item.h}:${item.color}:${Math.round(item.rot || 0)}`;
+  }
+  const gap = live?.unclosed?.gap == null ? '' : Math.round(live.unclosed.gap);
+  return [
+    state.mode, state.tool, state.prefs?.lang, state.floorId, sel, extra, rooms, areas, gap,
+    state.formError, state.chain ? state.chain.points.length : 0,
+    state.prefs?.wallThickness, state.prefs?.wallVirtual, state.prefs?.wallBearing,
+    state.prefs?.wallExterior, state.prefs?.furnitureSnap, state.prefs?.doorWidth, state.prefs?.windowWidth,
+  ].join('|');
+}
+
+function renderTools() {
+  const planTools = ['select', 'wall', 'room', 'door', 'window', 'demolish', 'measure', 'pan'];
+  const furnTools = ['select', 'library', 'measure', 'pan'];
+  const allow = state.mode === 'furnish' ? furnTools : planTools;
+  for (const button of ui.tools.querySelectorAll('[data-tool]')) {
+    const name = button.dataset.tool;
+    button.hidden = state.mode === 'view3d' ? true : !allow.includes(name);
+    button.classList.toggle('is-on', name === state.tool && state.mode !== 'view3d');
+    const label = t(name === 'library' ? 'tool.library' : `tool.${name}`);
+    button.title = TOOL_KEYS[name] ? `${label} (${TOOL_KEYS[name]})` : label;
+  }
+}
+
+function renderModes() {
+  for (const button of document.querySelectorAll('[data-mode]')) {
+    button.classList.toggle('is-on', button.dataset.mode === state.mode);
+  }
+}
+
+function renderFloors() {
+  const plan = state.store?.getPlan();
+  const ordered = plan ? floorsByElevation(plan) : [];
+  // M1 hides the add-floor (+) control. Multi-floor editing is a later milestone.
+  if (ordered.length < 2) {
+    ui.floors.hidden = true;
+    ui.floors.innerHTML = '';
+    return;
+  }
+  ui.floors.hidden = false;
+  const visual = [...ordered].reverse();
+  ui.floors.innerHTML = visual.map((floor) => {
+    const on = floor.id === state.floorId ? 'is-on' : '';
+    return `<button type="button" data-floor="${escapeHtml(floor.id)}" class="${on}">${escapeHtml(floor.name || floor.id)}</button>`;
+  }).join('');
+}
+
+function updateHistoryButtons() {
+  const undo = ui.top.querySelector('[data-action="undo"]');
+  const redo = ui.top.querySelector('[data-action="redo"]');
+  if (undo) undo.disabled = !(state.store && (state.store.canUndo() || state.store.isTransacting()));
+  if (redo) redo.disabled = !(state.store && state.store.canRedo() && !state.store.isTransacting());
+}
+
+function renderStatus() {
+  const world = state.hoverWorld;
+  const cursor = ui.status.querySelector('[data-cursor]');
+  const zoom = ui.status.querySelector('[data-zoom]');
+  const snap = ui.status.querySelector('[data-snap]');
+  const hint = ui.status.querySelector('[data-tool-hint]');
+  const save = ui.status.querySelector('[data-save]');
+  if (cursor) {
+    cursor.textContent = world
+      ? t('status.cursor', { x: formatMm(world.x), y: formatMm(world.y) })
+      : '';
+  }
+  if (zoom) zoom.textContent = t('status.zoom', { n: Math.round(state.camera.k * 1000) });
+  if (snap) {
+    const on = !state.shift && (state.tool === 'wall' || state.tool === 'measure');
+    snap.innerHTML = on
+      ? `<span class="chip on">${escapeHtml(t('status.snapOn'))}</span>`
+      : `<span class="chip">${escapeHtml(t('status.snapOff'))}</span>`;
+  }
+  if (hint) hint.textContent = toolHint();
+  if (save) {
+    const key = state.saveState === 'error' ? 'status.saveError'
+      : state.saveState === 'dirty' ? 'status.dirty'
+        : state.saveState === 'saving' ? 'status.saving'
+          : 'status.saved';
+    save.textContent = t(key);
+  }
+  const px = niceScale(state.camera.k);
+  const label = ui.scale.querySelector('[data-scale-label]');
+  const line = ui.scale.querySelector('[data-scale-line]');
+  if (label) label.textContent = formatMm(px.mm);
+  if (line) line.style.width = `${Math.max(8, px.px)}px`;
+}
+
+function toolHint() {
+  if (state.mode === 'furnish' && state.tool === 'library') return t('hint.library');
+  const key = {
+    wall: 'hint.wall',
+    door: 'hint.door',
+    window: 'hint.window',
+    demolish: 'hint.demolish',
+    measure: 'hint.measure',
+    room: 'hint.room',
+    pan: 'hint.pan',
+    select: 'hint.select',
+    library: 'hint.library',
+  }[state.tool];
+  return key ? t(key) : '';
+}
+
+function niceScale(k) {
+  const safe = k > 0 ? k : 0.05;
+  const target = 96;
+  const mm = target / safe;
+  const pow = 10 ** Math.floor(Math.log10(Math.max(mm, 1)));
+  let best = pow;
+  for (const n of [1, 2, 5]) {
+    const cand = n * pow;
+    if (Math.abs(cand * safe - target) < Math.abs(best * safe - target)) best = cand;
+  }
+  return { mm: best, px: best * safe };
+}
+
+function sideHTML() {
+  if (state.mode === 'furnish') {
+    return `${catalogHTML()}${defaultsHTML()}`;
+  }
+  let head = '';
+  if (state.tool === 'wall') head = wallOptionsHTML();
+  else if (state.tool === 'door' || state.tool === 'window') head = `<p class="note">${escapeHtml(toolHint())}</p>`;
+  else head = `<p class="note">${escapeHtml(toolHint())}</p>`;
+  return `${head}${defaultsHTML()}`;
+}
+
+function wallOptionsHTML() {
+  const prefs = state.prefs;
+  const presets = WALL_THICKNESS.presets.map((value) => {
+    const on = prefs.wallThickness === value ? 'is-on' : '';
+    return `<button type="button" class="${on}" data-action="pref-thickness" data-value="${value}">${value}</button>`;
+  }).join('');
+  return `
+    <h2 class="panel-title">${escapeHtml(t('tool.wall'))}</h2>
+    <div class="field"><label>${escapeHtml(t('wall.type'))}</label>
+      <div class="seg wide">
+        <button type="button" data-action="pref-virtual" data-value="0" class="${prefs.wallVirtual ? '' : 'is-on'}">${escapeHtml(t('wall.solid'))}</button>
+        <button type="button" data-action="pref-virtual" data-value="1" class="${prefs.wallVirtual ? 'is-on' : ''}">${escapeHtml(t('wall.virtual'))}</button>
+      </div>
+    </div>
+    <div class="field"><label>${escapeHtml(t('wall.thickness'))}</label><div class="presets">${presets}</div></div>
+    <label class="check"><input type="checkbox" data-pref="wallBearing" ${prefs.wallBearing ? 'checked' : ''} ${prefs.wallVirtual ? 'disabled' : ''}/>${escapeHtml(t('wall.bearing'))}</label>
+    <label class="check"><input type="checkbox" data-pref="wallExterior" ${prefs.wallExterior ? 'checked' : ''}/>${escapeHtml(t('wall.exterior'))}</label>
+    <div class="field"><label>${escapeHtml(t('wall.length'))}</label><div class="length-readout" data-field="length">${escapeHtml(t('wall.empty'))}</div></div>
+    <p class="note">${escapeHtml(t('wall.virtualNote'))}</p>`;
+}
+
+function defaultsHTML() {
+  const p = state.prefs;
+  const num = (pref, label) => `
+    <div class="field"><label>${escapeHtml(label)}</label>
+      <input type="number" data-pref="${pref}" value="${escapeHtml(p[pref])}" />
+    </div>`;
+  return `
+    <section class="defaults">
+      <h2 class="panel-title">${escapeHtml(t('defaults.title'))}</h2>
+      ${num('wallThickness', t('defaults.wall'))}
+      ${num('exteriorThickness', t('defaults.exterior'))}
+      ${num('doorWidth', t('defaults.doorW'))}
+      ${num('doorHeight', t('defaults.doorH'))}
+      ${num('windowWidth', t('defaults.windowW'))}
+      ${num('windowHeight', t('defaults.windowH'))}
+      ${num('windowSill', t('defaults.sill'))}
+      <label class="check"><input type="checkbox" data-pref="furnitureSnap" ${p.furnitureSnap ? 'checked' : ''}/>${escapeHtml(t('defaults.snap'))}</label>
+    </section>`;
+}
+
+function catalogHTML() {
+  const q = '';
+  void q;
+  const groups = catalogCategories().map((category) => {
+    const key = CAT_KEYS[category] || '';
+    const items = CATALOG.filter((item) => item.category === category).map((item) => {
+      const name = state.prefs.lang === 'en' ? item.nameEn : item.name;
+      return `<button type="button" class="furn-item" data-furn="${escapeHtml(item.type)}" data-name="${escapeHtml(`${item.name} ${item.nameEn}`)}">
+        <span class="swatch" style="background:${escapeHtml(item.color)}"></span>
+        <span>${escapeHtml(name)}</span>
+        <small>${item.w}×${item.d}</small>
+      </button>`;
+    }).join('');
+    return `<div class="cat-label">${escapeHtml(key ? t(key) : category)}</div>${items}`;
+  }).join('');
+  return `
+    <h2 class="panel-title">${escapeHtml(t('tool.library'))}</h2>
+    <input class="search" data-search placeholder="${escapeHtml(t('furn.search'))}" />
+    ${groups}`;
+}
+
+function inspectorHTML() {
+  const live = state.store && state.floorId ? liveDerive(state.floorId) : null;
+  if (state.tool === 'wall' && state.chain) return drawingInspector(live);
+  if (!state.selection) return emptyInspector(live);
+  if (state.selection.kind === 'wall') return wallInspector(live);
+  if (state.selection.kind === 'room') return roomInspector(live);
+  if (state.selection.kind === 'opening') return openingInspector();
+  if (state.selection.kind === 'furniture') return furnitureInspector();
+  return emptyInspector(live);
+}
+
+function unclosedBlock(live) {
+  const gap = live?.unclosed?.gap;
+  if (!(gap > 1)) return '';
+  return `<p class="warn">${escapeHtml(t('toast.unclosed', { n: formatMm(gap) }))}</p>`;
+}
+
+function errorBlock() {
+  return state.formError ? `<p class="err">${escapeHtml(state.formError)}</p>` : '';
+}
+
+function drawingInspector(live) {
+  const n = state.chain?.points?.length || 0;
+  return `<h2 class="panel-title">${escapeHtml(t('inspector.drawing'))}</h2>
+    <p class="note">${escapeHtml(t('hint.wall'))}</p>
+    <p class="num">${n}</p>
+    ${unclosedBlock(live)}`;
+}
+
+function emptyInspector(live) {
+  const rooms = live?.rooms || [];
+  const faces = live?.derived || [];
+  const areaOf = new Map(faces.map((face) => [face.roomId, face.areaM2 || 0]));
+  const total = live ? formatAreaM2(suiteNetM2(live.derived, live.rooms)) : formatAreaM2(0);
+  const rows = rooms.map((room) => {
+    const on = state.selection?.kind === 'room' && state.selection.id === room.id ? 'is-on' : '';
+    return `<button type="button" class="room-row ${on}" data-room="${escapeHtml(room.id)}">
+      <span>${escapeHtml(room.name)}</span>
+      <span class="num">${escapeHtml(formatAreaM2(areaOf.get(room.id) || 0))} m²</span>
+    </button>`;
+  }).join('');
+  return `<h2 class="panel-title">${escapeHtml(t('net.heading'))}</h2>
+    <p class="total">${escapeHtml(t('net.total', { area: total }))}</p>
+    ${rows || `<p class="note">${escapeHtml(t('inspector.empty'))}</p>`}
+    ${unclosedBlock(live)}`;
+}
+
+function wallInspector(live) {
+  const floor = ensureFloor();
+  const wall = floor?.walls.find((item) => item.id === state.selection.id);
+  if (!wall) return emptyInspector(live);
+  return `<h2 class="panel-title">${escapeHtml(t('inspector.wall'))}</h2>
+    ${errorBlock()}
+    <div class="field"><label>${escapeHtml(t('wall.thickness'))}</label>
+      <input type="number" data-field="wall-thickness" min="60" max="500" value="${wall.thickness}" />
+      <span class="note">${escapeHtml(t('wall.thicknessHint'))}</span>
+    </div>
+    <div class="field"><label>${escapeHtml(t('wall.type'))}</label>
+      <div class="seg wide">
+        <button type="button" data-action="wall-virtual" data-value="0" class="${wall.virtual ? '' : 'is-on'}">${escapeHtml(t('wall.solid'))}</button>
+        <button type="button" data-action="wall-virtual" data-value="1" class="${wall.virtual ? 'is-on' : ''}">${escapeHtml(t('wall.virtual'))}</button>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" data-field="wall-bearing" ${wall.bearing ? 'checked' : ''} ${wall.virtual ? 'disabled' : ''}/>${escapeHtml(t('wall.bearing'))}</label>
+    <label class="check"><input type="checkbox" data-field="wall-exterior" ${wall.exterior ? 'checked' : ''}/>${escapeHtml(t('wall.exterior'))}</label>
+    <div class="field"><label>${escapeHtml(t('wall.height'))}</label>
+      <input type="number" data-field="wall-height" value="${wall.height ?? ''}" />
+    </div>
+    <button type="button" class="btn danger" data-action="demolish">${escapeHtml(t('demolish.confirm'))}</button>
+    <button type="button" class="btn" data-action="delete-selection">${escapeHtml(t('inspector.delete'))}</button>
+    ${unclosedBlock(live)}`;
+}
+
+function roomInspector(live) {
+  const floor = ensureFloor();
+  const room = floor?.rooms.find((item) => item.id === state.selection.id);
+  const face = live?.derived?.find((item) => item.roomId === state.selection.id);
+  if (!room) return emptyInspector(live);
+  return `<h2 class="panel-title">${escapeHtml(t('inspector.room'))}</h2>
+    <div class="field"><label>${escapeHtml(t('room.name'))}</label>
+      <input data-field="room-name" value="${escapeHtml(room.name)}" />
+    </div>
+    <div class="field"><label>${escapeHtml(t('room.type'))}</label>
+      <select data-field="room-type">${typeOptions(room.type)}</select>
+    </div>
+    <div class="field"><label>${escapeHtml(t('room.floor'))}</label>
+      <select data-field="room-floor">${materialOptions(room.floor)}</select>
+    </div>
+    <p class="total">${escapeHtml(t('net.room', { area: formatAreaM2(face?.areaM2 || 0) }))}</p>`;
+}
+
+function typeOptions(current) {
+  const types = ROOM_TYPES.includes(current) || !current ? [...ROOM_TYPES] : [current, ...ROOM_TYPES];
+  return types.map((type) => {
+    const label = state.messages[`room.type.${type}`] ? t(`room.type.${type}`) : type;
+    return `<option value="${escapeHtml(type)}"${type === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function materialOptions(current) {
+  const list = MATERIALS.includes(current) || !current ? [...MATERIALS] : [current, ...MATERIALS];
+  return list.map((id) => {
+    const label = state.messages[`material.${id}`] ? t(`material.${id}`) : id;
+    return `<option value="${escapeHtml(id)}"${id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+function openingInspector() {
+  const floor = ensureFloor();
+  const opening = floor?.openings.find((item) => item.id === state.selection.id);
+  if (!opening) return emptyInspector(state.floorId ? liveDerive(state.floorId) : null);
+  const kinds = [['door', 'opening.door'], ['slide', 'opening.slide'], ['window', 'opening.window']];
+  if (!kinds.some((item) => item[0] === opening.kind)) kinds.push([opening.kind, '']);
+  const kindButtons = kinds.map(([kind, key]) => {
+    const label = key ? t(key) : kind;
+    return `<button type="button" data-action="opening-kind" data-value="${escapeHtml(kind)}" class="${opening.kind === kind ? 'is-on' : ''}">${escapeHtml(label)}</button>`;
+  }).join('');
+  const widths = [700, 800, 900].map((value) => `<button type="button" data-action="opening-width" data-value="${value}" class="${opening.width === value ? 'is-on' : ''}">${value}</button>`).join('');
+  const swing = opening.kind === 'window' ? '' : `
+    <div class="field"><label>${escapeHtml(t('opening.swing'))}</label>
+      <div class="seg wide">
+        <button type="button" data-action="opening-swing" data-value="in" class="${opening.swing === 'out' ? '' : 'is-on'}">${escapeHtml(t('opening.swingIn'))}</button>
+        <button type="button" data-action="opening-swing" data-value="out" class="${opening.swing === 'out' ? 'is-on' : ''}">${escapeHtml(t('opening.swingOut'))}</button>
+      </div>
+    </div>
+    <div class="field"><label>${escapeHtml(t('opening.hinge'))}</label>
+      <div class="seg wide">
+        <button type="button" data-action="opening-hinge" data-value="left" class="${opening.hinge === 'right' ? '' : 'is-on'}">${escapeHtml(t('opening.left'))}</button>
+        <button type="button" data-action="opening-hinge" data-value="right" class="${opening.hinge === 'right' ? 'is-on' : ''}">${escapeHtml(t('opening.right'))}</button>
+      </div>
+    </div>`;
+  return `<h2 class="panel-title">${escapeHtml(t('inspector.opening'))}</h2>
+    ${errorBlock()}
+    <div class="field"><label>${escapeHtml(t('opening.type'))}</label><div class="seg wide">${kindButtons}</div></div>
+    <div class="field"><label>${escapeHtml(t('opening.width'))}</label>
+      <div class="presets">${widths}<span class="note">${escapeHtml(t('opening.custom'))}</span></div>
+      <input type="number" data-field="opening-width" value="${opening.width}" />
+    </div>
+    ${swing}
+    <div class="field"><label>${escapeHtml(t('opening.height'))}</label>
+      <input type="number" data-field="opening-height" value="${opening.height}" />
+    </div>
+    <div class="field"><label>${escapeHtml(t('opening.sill'))}</label>
+      <input type="number" data-field="opening-sill" value="${opening.sill}" />
+    </div>
+    <button type="button" class="btn" data-action="opening-center">${escapeHtml(t('opening.center'))}</button>
+    <button type="button" class="btn" data-action="delete-selection">${escapeHtml(t('inspector.delete'))}</button>`;
+}
+
+function furnitureInspector() {
+  const floor = ensureFloor();
+  const item = floor?.furniture.find((entry) => entry.id === state.selection.id);
+  if (!item) return emptyInspector(state.floorId ? liveDerive(state.floorId) : null);
+  const num = (field, label, value) => `
+    <div class="field"><label>${escapeHtml(label)}</label>
+      <input type="number" data-field="${field}" min="50" max="6000" value="${value}" />
+    </div>`;
+  return `<h2 class="panel-title">${escapeHtml(t('inspector.furniture'))}</h2>
+    <div class="field"><label>${escapeHtml(t('furn.name'))}</label>
+      <input data-field="furn-name" value="${escapeHtml(item.name)}" />
+    </div>
+    ${num('furn-w', t('furn.w'), item.w)}
+    ${num('furn-d', t('furn.d'), item.d)}
+    ${num('furn-h', t('furn.h'), item.h ?? 750)}
+    <div class="field"><label>${escapeHtml(t('furn.color'))}</label>
+      <input type="color" data-field="furn-color" value="${escapeHtml(item.color || '#888888')}" />
+    </div>
+    <button type="button" class="btn" data-action="duplicate-selection">${escapeHtml(t('furn.duplicate'))}</button>
+    <button type="button" class="btn" data-action="delete-selection">${escapeHtml(t('furn.delete'))}</button>`;
+}
+
+function renderCanvas() {
+  if (!view) return;
+  const model = buildModel();
+  view.render(model);
+}
+
+function buildModel() {
+  const camera = state.camera;
+  const floor = ensureFloor();
+  const cursor = cursorFor();
+  if (!floor || !state.store) {
+    return {
+      camera, cursor, rooms: [], walls: [], openings: [], furniture: [],
+      labels: [], handles: [], guides: state.snap?.guides || [], bubbles: [], lower: null,
+    };
+  }
+  const live = liveDerive(state.floorId);
+  const drawn = floorGraphics(floor, live, {
+    labels: true,
+    selected: state.selection,
+    condemnedId: state.condemnedId,
+    shakeId: state.shakeId,
+    mergeId: state.mergeId,
+  });
+  if (state.chain && state.snap && state.tool === 'wall') {
+    const origin = state.chain.points[state.chain.points.length - 1];
+    const style = wallStyle();
+    drawn.walls.push({
+      id: 'preview-wall',
+      a: { x: origin.x, y: origin.y },
+      b: { x: state.snap.point.x, y: state.snap.point.y },
+      thickness: style.thickness,
+      virtual: style.virtual,
+      preview: true,
+    });
+  }
+  if (state.openingPreview && (state.tool === 'door' || state.tool === 'window')) {
+    const preview = state.openingPreview;
+    const wall = floor.walls.find((item) => item.id === preview.wallId);
+    drawn.openings.push({
+      id: 'preview',
+      a: { x: preview.ax, y: preview.ay },
+      b: { x: preview.bx, y: preview.by },
+      thickness: wall?.thickness || 240,
+      preview: true,
+      ok: !!preview.ok,
+      opening: {
+        t: preview.t,
+        width: preview.width,
+        height: preview.height,
+        sill: preview.sill,
+        hinge: preview.hinge,
+        swing: preview.swing,
+        kind: preview.kind,
+      },
+    });
+  }
+  const quads = [];
+  for (const wall of floor.walls) {
+    if (wall.virtual || wall.demolished) continue;
+    const a = drawn.nodes.get(wall.a);
+    const b = drawn.nodes.get(wall.b);
+    if (!a || !b) continue;
+    quads.push(wallQuad(a, b, wall.thickness, false));
+  }
+  const warns = warningIds(floor.furniture || [], quads, live.derived || []);
+  const furniture = (floor.furniture || []).map((item) => ({
+    id: item.id,
+    item,
+    shape: shapeOf(item),
+    warn: warns.has(item.id),
+    selected: state.selection?.kind === 'furniture' && state.selection.id === item.id,
+  }));
+  const bubbles = [];
+  if (state.chain && state.snap && state.snap.length != null && state.tool === 'wall') {
+    const origin = state.chain.points[state.chain.points.length - 1];
+    bubbles.push({
+      id: 'length',
+      x: (origin.x + state.snap.point.x) / 2,
+      y: (origin.y + state.snap.point.y) / 2,
+      text: t('bubble.length', { length: formatMm(state.snap.length), angle: formatAngle(state.snap.angle || 0) }),
+      tone: 'dark',
+    });
+  }
+  if (state.openingPreview && (state.tool === 'door' || state.tool === 'window')) {
+    const preview = state.openingPreview;
+    const x = preview.ax + (preview.bx - preview.ax) * (preview.t || 0);
+    const y = preview.ay + (preview.by - preview.ay) * (preview.t || 0);
+    bubbles.push({
+      id: 'opening',
+      x,
+      y,
+      text: preview.ok ? formatMm(preview.width) : explainOpening(preview),
+      tone: 'dark',
+    });
+  }
+  const handles = [];
+  if (state.selection?.kind === 'wall' && state.tool === 'select') {
+    const wall = floor.walls.find((item) => item.id === state.selection.id && !item.demolished);
+    if (wall) {
+      for (const id of [wall.a, wall.b]) {
+        const node = drawn.nodes.get(id);
+        if (node) handles.push({ id, x: node.x, y: node.y });
+      }
+    }
+  }
+  if (state.selection?.kind === 'furniture' && (state.mode === 'furnish' || state.tool === 'select')) {
+    const item = floor.furniture.find((entry) => entry.id === state.selection.id);
+    if (item) {
+      const handle = rotateHandlePoint(item);
+      handles.push({ id: `rot-${item.id}`, x: handle.x, y: handle.y, x2: item.cx, y2: item.cy });
+    }
+  }
+  let dimension = null;
+  if (state.selection?.kind === 'wall') {
+    const wall = floor.walls.find((item) => item.id === state.selection.id && !item.demolished && !item.virtual);
+    const a = wall && drawn.nodes.get(wall.a);
+    const b = wall && drawn.nodes.get(wall.b);
+    if (a && b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const off = (wall.thickness || 0) / 2 + 180;
+      const nx = -dy / len;
+      const ny = dx / len;
+      dimension = {
+        a: { x: a.x + nx * off, y: a.y + ny * off },
+        b: { x: b.x + nx * off, y: b.y + ny * off },
+        text: formatMm(len),
+      };
+    }
+  }
+  let measure = null;
+  if (state.measure?.a && state.measure?.b) measure = state.measure;
+  else if (state.measure?.a && state.snap && state.tool === 'measure') {
+    measure = {
+      a: state.measure.a,
+      b: state.snap.point,
+      text: formatMm(state.snap.length || 0),
+    };
+  }
+  const below = floorBelow(state.store.getPlan(), state.floorId);
+  let lower = null;
+  if (below) {
+    let derived = null;
+    try { derived = deriveRooms(state.store.getPlan(), below.id); } catch { derived = null; }
+    if (derived) {
+      const ghost = floorGraphics(below, derived, { labels: false });
+      lower = { rooms: ghost.rooms, walls: ghost.walls, openings: ghost.openings };
+    }
+  }
+  return {
+    camera,
+    cursor,
+    rooms: drawn.rooms,
+    walls: drawn.walls,
+    openings: drawn.openings,
+    furniture,
+    labels: drawn.labels,
+    handles,
+    guides: state.snap?.guides || [],
+    bubbles,
+    gap: gapBox(live.unclosed),
+    measure,
+    dimension,
+    snap: state.snap?.kind === 'endpoint' ? { x: state.snap.point.x, y: state.snap.point.y, kind: 'endpoint' } : null,
+    lower,
+  };
+}
+
+function shapeOf(item) {
+  return catalogEntry(item.type)?.shape || 'box';
+}
+
+function floorGraphics(floor, derived, opts) {
+  const nodes = new Map((floor.nodes || []).map((node) => [node.id, node]));
+  const rooms = [];
+  const labels = [];
+  const typeOf = new Map((derived?.rooms || []).map((room) => [room.id, room]));
+  for (const face of derived?.derived || []) {
+    const points = face.polygon?.length >= 3 ? face.polygon : face.centerline;
+    if (!points || points.length < 3) continue;
+    const room = typeOf.get(face.roomId);
+    rooms.push({
+      id: String(face.roomId),
+      points,
+      fill: roomFillVar(room?.type),
+      merge: opts.mergeId === face.roomId,
+    });
+    if (opts.labels !== false) {
+      const at = face.centroid || points[0];
+      labels.push({
+        id: String(face.roomId),
+        x: at.x,
+        y: at.y,
+        name: room?.name || '',
+        area: t('net.room', { area: formatAreaM2(face.areaM2 || 0) }),
+      });
+    }
+  }
+  const walls = (floor.walls || []).flatMap((wall) => {
+    const a = nodes.get(wall.a);
+    const b = nodes.get(wall.b);
+    if (!a || !b) return [];
+    return [{
+      id: wall.id,
+      a: { x: a.x, y: a.y },
+      b: { x: b.x, y: b.y },
+      thickness: wall.thickness,
+      virtual: !!wall.virtual,
+      bearing: !!wall.bearing,
+      demolished: !!wall.demolished,
+      selected: opts.selected?.kind === 'wall' && opts.selected.id === wall.id,
+      condemned: opts.condemnedId === wall.id,
+      shake: opts.shakeId === wall.id,
+    }];
+  });
+  const openings = (floor.openings || []).flatMap((opening) => {
+    const wall = (floor.walls || []).find((item) => item.id === opening.wall);
+    if (!wall || wall.demolished) return [];
+    const a = nodes.get(wall.a);
+    const b = nodes.get(wall.b);
+    if (!a || !b) return [];
+    return [{
+      id: opening.id,
+      a: { x: a.x, y: a.y },
+      b: { x: b.x, y: b.y },
+      thickness: wall.virtual ? 80 : wall.thickness,
+      opening,
+    }];
+  });
+  return { rooms, labels, walls, openings, nodes };
+}
+
+function gapBox(unclosed) {
+  const gap = unclosed?.gap;
+  const ends = unclosed?.endpoints || [];
+  if (!(gap > 1) || ends.length < 2) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < ends.length; i += 1) {
+    for (let j = i + 1; j < ends.length; j += 1) {
+      const d = Math.hypot(ends[i].x - ends[j].x, ends[i].y - ends[j].y);
+      if (d < bestD) {
+        bestD = d;
+        best = [ends[i], ends[j]];
+      }
+    }
+  }
+  if (!best) return null;
+  const pad = 80;
+  return {
+    x: Math.min(best[0].x, best[1].x) - pad,
+    y: Math.min(best[0].y, best[1].y) - pad,
+    w: Math.abs(best[1].x - best[0].x) + pad * 2,
+    h: Math.abs(best[1].y - best[0].y) + pad * 2,
+    text: t('toast.unclosed', { n: formatMm(gap) }),
+  };
+}
+
+function cursorFor() {
+  if (state.gesture?.kind === 'pan') return 'grabbing';
+  if (state.space || state.tool === 'pan') return 'grab';
+  if ((state.tool === 'door' || state.tool === 'window') && state.openingPreview && !state.openingPreview.ok) return 'not-allowed';
+  if (state.tool === 'wall' || state.tool === 'door' || state.tool === 'window' || state.tool === 'measure' || state.tool === 'demolish') return 'crosshair';
+  return 'default';
+}
+
+function fitCamera() {
+  const size = view?.size() || { w: 0, h: 0 };
+  if (size.w < 20 || size.h < 20) {
+    state.refit = true;
+    return;
+  }
+  state.refit = false;
+  const floor = ensureFloor();
+  const pts = [];
+  if (floor) {
+    for (const node of floor.nodes || []) pts.push(node);
+    for (const item of floor.furniture || []) {
+      pts.push({ x: item.cx - item.w / 2, y: item.cy - item.d / 2 });
+      pts.push({ x: item.cx + item.w / 2, y: item.cy + item.d / 2 });
+    }
+  }
+  if (!pts.length) {
+    state.camera.k = 0.05;
+    state.camera.x = size.w / 2;
+    state.camera.y = size.h / 2;
+  } else {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of pts) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+    const pad = 80;
+    const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
+    state.camera.k = Math.max(0.002, Math.min(2, k));
+    state.camera.x = (size.w - (minX + maxX) * state.camera.k) / 2;
+    state.camera.y = (size.h - (minY + maxY) * state.camera.k) / 2;
+  }
+  renderCanvas();
+  renderStatus();
+}
+
+function setTool(tool, silent) {
+  if (tool === 'view3d') {
+    void enter3d();
+    return;
+  }
+  if (state.mode === 'view3d') exit3d();
+  if (tool === 'library') {
+    state.mode = 'furnish';
+    state.tool = 'library';
+  } else if (tool === 'select' || tool === 'measure' || tool === 'pan') {
+    state.tool = tool;
+  } else {
+    state.mode = 'plan';
+    state.tool = tool;
+  }
+  if (tool !== 'wall') {
+    state.chain = null;
+    state.lengthBuf = '';
+  }
+  state.openingPreview = null;
+  if (!silent) renderAll();
+}
+
+function setMode(mode) {
+  if (mode === 'view3d') {
+    void enter3d();
+    return;
+  }
+  if (state.mode === 'view3d') exit3d();
+  state.mode = mode;
+  if (mode === 'furnish' && !['select', 'library', 'measure', 'pan'].includes(state.tool)) state.tool = 'library';
+  if (mode === 'plan' && state.tool === 'library') state.tool = 'select';
+  if (mode !== 'plan') {
+    state.chain = null;
+    state.lengthBuf = '';
+  }
+  renderAll();
+}
+
+function wallStyle() {
+  return {
+    thickness: state.prefs.wallExterior ? state.prefs.exteriorThickness : state.prefs.wallThickness,
+    virtual: !!state.prefs.wallVirtual,
+    bearing: state.prefs.wallVirtual ? false : !!state.prefs.wallBearing,
+    exterior: !!state.prefs.wallExterior,
+  };
+}
+
+function openingSpec() {
+  if (state.tool === 'window') {
+    return {
+      kind: 'window',
+      width: state.prefs.windowWidth,
+      height: state.prefs.windowHeight,
+      sill: state.prefs.windowSill,
+      hinge: 'left',
+      swing: 'in',
+    };
+  }
+  return {
+    kind: 'door',
+    width: state.prefs.doorWidth,
+    height: state.prefs.doorHeight,
+    sill: 0,
+    hinge: 'left',
+    swing: state.openingSwing || 'in',
+  };
+}
+
+function explainOpening(preview) {
+  const noun = (preview?.kind === 'window') ? t('opening.noun.window') : t('opening.noun.door');
+  if (!preview) return t('opening.reason.generic', { noun });
+  if (preview.code === 'OPENING_ON_VIRTUAL') return t('opening.reason.virtual');
+  if (preview.code === 'OPENING_TOO_WIDE') {
+    return t('opening.reason.wide', {
+      noun,
+      width: Math.round(preview.width || 0),
+      length: Math.round(preview.segmentLength || 0),
+      fix: preview.kind === 'window' ? t('opening.fix.window') : t('opening.fix.door'),
+    });
+  }
+  if (preview.code === 'OPENING_CLEARANCE') return t('opening.reason.clearance', { noun });
+  if (preview.code === 'OPENING_CROSSES_NODE') return t('opening.reason.cross', { noun });
+  return t('opening.reason.generic', { noun });
+}
+
+function computeSnap(cursor, shift, lengthMm, origin) {
+  const floor = ensureFloor();
+  const nodes = [];
+  const walls = [];
+  if (floor) {
+    const byId = new Map((floor.nodes || []).map((node) => [node.id, node]));
+    const used = new Set();
+    for (const wall of floor.walls || []) {
+      if (wall.demolished) continue;
+      const a = byId.get(wall.a);
+      const b = byId.get(wall.b);
+      if (!a || !b) continue;
+      walls.push({ id: wall.id, a, b });
+      if (!used.has(a.id)) { used.add(a.id); nodes.push(a); }
+      if (!used.has(b.id)) { used.add(b.id); nodes.push(b); }
+    }
+  }
+  if (state.chain) {
+    state.chain.points.forEach((point, index) => {
+      nodes.push({ id: point.nodeId || `chain${index}`, x: point.x, y: point.y });
+    });
+  }
+  const useOrigin = origin === undefined
+    ? (state.chain ? state.chain.points[state.chain.points.length - 1] : null)
+    : origin;
+  return resolveSnap({
+    origin: useOrigin,
+    cursor,
+    nodes,
+    walls,
+    pxPerMm: state.camera.k,
+    shift: !!shift,
+    lengthMm,
+  });
+}
+
+function updateHover(event) {
+  if (!svg || state.pickerOpen || !state.store) return;
+  const world = view.worldFromClient(event.clientX, event.clientY);
+  state.hoverWorld = world;
+  state.shift = !!event.shiftKey;
+  if (state.tool === 'wall' && state.mode === 'plan') state.snap = computeSnap(world, event.shiftKey, null);
+  else if (state.tool === 'measure') {
+    const origin = state.measure && !state.measure.b ? state.measure.a : null;
+    state.snap = computeSnap(world, event.shiftKey, null, origin);
+  } else state.snap = null;
+  if ((state.tool === 'door' || state.tool === 'window') && state.mode === 'plan') {
+    state.openingPreview = previewOpening(state.store.getPlan(), state.floorId, world, openingSpec(), state.camera.k);
+  } else state.openingPreview = null;
+  renderCanvas();
+  renderStatus();
+  patchLength();
+}
+
+function patchLength() {
+  const el = ui.side?.querySelector('[data-field="length"]');
+  if (!el) return;
+  if (state.lengthBuf) {
+    el.textContent = state.lengthBuf;
+    el.classList.add('is-hot');
+    return;
+  }
+  el.classList.remove('is-hot');
+  el.textContent = state.chain && state.snap?.length != null ? formatMm(state.snap.length) : t('wall.empty');
+}
+
+function placeWall(world, shift) {
+  if (!world || !state.store) return;
+  const snap = computeSnap(world, shift, null);
+  if (!state.chain) {
+    state.chain = {
+      points: [{ x: snap.point.x, y: snap.point.y, nodeId: snap.nodeId }],
+      steps: 0,
+    };
+    state.lengthBuf = '';
+    renderAll();
+    return;
+  }
+  tryPlace(snap);
+}
+
+function placeAtLength(len) {
+  if (!state.chain) return;
+  const origin = state.chain.points[state.chain.points.length - 1];
+  const cursor = state.hoverWorld || { x: origin.x + 1000, y: origin.y };
+  tryPlace(computeSnap(cursor, state.shift, len));
+}
+
+function tryPlace(snap) {
+  const origin = state.chain.points[state.chain.points.length - 1];
+  let target = { x: snap.point.x, y: snap.point.y, nodeId: snap.nodeId };
+  const closing = shouldCloseChain(state.chain.points.length, target, state.chain.points[0]);
+  if (closing) {
+    const start = state.chain.points[0];
+    target = { x: start.x, y: start.y, nodeId: start.nodeId };
+  }
+  if (segmentTooShort(origin, target)) return;
+  const size = state.store.historySize();
+  state.store.dispatch(wallAddCommand(
+    state.floorId,
+    { x: origin.x, y: origin.y, nodeId: origin.nodeId || undefined },
+    { x: target.x, y: target.y, nodeId: target.nodeId || undefined },
+    wallStyle(),
+  ));
+  if (state.store.historySize() === size) return;
+  state.lengthBuf = '';
+  if (closing) {
+    const live = liveDerive(state.floorId);
+    state.chain = null;
+    showPill(t('pill.rooms', { n: live.derived.length }));
+  } else {
+    state.chain.points.push(target);
+    state.chain.steps += 1;
+    bindChainNodes();
+  }
+  renderAll();
+}
+
+function bindChainNodes() {
+  if (!state.chain) return;
+  const floor = ensureFloor();
+  if (!floor) return;
+  for (const point of state.chain.points) {
+    const node = (floor.nodes || []).find((item) => Math.hypot(item.x - point.x, item.y - point.y) <= 1.5);
+    point.nodeId = node ? node.id : null;
+  }
+}
+
+function placeOpening() {
+  const preview = state.openingPreview;
+  if (!preview?.ok || !state.store) return;
+  const spec = openingSpec();
+  const opening = {
+    id: uniqueId('o'),
+    wall: preview.wallId,
+    t: preview.t,
+    kind: spec.kind,
+    width: spec.width,
+    height: spec.height,
+    sill: spec.sill,
+    hinge: 'left',
+    swing: spec.kind === 'window' ? 'in' : (state.openingSwing || 'in'),
+  };
+  const size = state.store.historySize();
+  state.store.dispatch(openingAddCommand(state.floorId, opening));
+  if (state.store.historySize() === size) {
+    toast(explainOpening(preview), 'danger');
+    return;
+  }
+  state.selection = { kind: 'opening', id: opening.id };
+  state.formError = '';
+  renderAll();
+}
+
+function placeMeasure(shift) {
+  const origin = state.measure && !state.measure.b ? state.measure.a : null;
+  const snap = computeSnap(state.hoverWorld, shift, null, origin);
+  const point = { x: snap.point.x, y: snap.point.y };
+  if (!state.measure || state.measure.b) state.measure = { a: point };
+  else if (!segmentTooShort(state.measure.a, point, 1)) {
+    state.measure = {
+      a: state.measure.a,
+      b: point,
+      text: formatMm(Math.hypot(point.x - state.measure.a.x, point.y - state.measure.a.y)),
+    };
+  }
+  renderCanvas();
+}
+
+function pick(world) {
+  const floor = ensureFloor();
+  if (!floor) return null;
+  return hitTest({
+    floor,
+    derived: liveDerive(state.floorId),
+    world,
+    pxPerMm: state.camera.k,
+    selection: state.selection,
+    mode: state.mode === 'furnish' ? 'furnish' : 'plan',
+    prefer: state.tool === 'room' ? 'room' : undefined,
+  });
+}
+
+function selectFromHit(hit) {
+  if (!hit) {
+    state.selection = null;
+  } else if (hit.kind === 'node') state.selection = { kind: 'wall', id: hit.wallId };
+  else if (hit.kind === 'rotate') state.selection = { kind: 'furniture', id: hit.id };
+  else state.selection = { kind: hit.kind, id: hit.id };
+  state.formError = '';
+  renderChrome();
+}
+
+function onPointerDown(event) {
+  state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (state.pointers.size >= 2) {
+    cancelGesture();
+    return;
+  }
+  const furn = event.target.closest?.('[data-furn]');
+  if (furn && event.button === 0 && !state.pickerOpen) {
+    event.preventDefault();
+    startFurn(furn, event);
+    return;
+  }
+  if (event.button === 1) event.preventDefault();
+  if (!event.target.closest?.('.plan-svg') || state.pickerOpen || svg.hidden) return;
+  const world = view.worldFromClient(event.clientX, event.clientY);
+  state.hoverWorld = world;
+  if (event.button === 1 || state.space || state.tool === 'pan') {
+    state.gesture = { kind: 'pan', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    return;
+  }
+  if (event.button !== 0 || state.mode === 'view3d') return;
+  if (state.tool === 'wall' && state.mode === 'plan') {
+    state.gesture = { kind: 'wall', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    return;
+  }
+  if ((state.tool === 'door' || state.tool === 'window') && state.mode === 'plan') {
+    state.gesture = { kind: 'door', pointerId: event.pointerId };
+    updateHover(event);
+    return;
+  }
+  if (state.tool === 'measure') {
+    state.gesture = { kind: 'measure', pointerId: event.pointerId };
+    return;
+  }
+  if (state.tool === 'demolish') {
+    state.gesture = { kind: 'demolish', pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    return;
+  }
+  const hit = pick(world);
+  state.gesture = {
+    kind: 'select',
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    world,
+    hit,
+    moved: false,
+  };
+  if (hit && hit.kind !== 'node' && hit.kind !== 'rotate') selectFromHit(hit);
+}
+
+function onPointerMove(event) {
+  if (state.pointers.has(event.pointerId)) {
+    state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  }
+  if (state.pointers.size >= 2) {
+    pinch();
+    return;
+  }
+  if (state.furnDrag) {
+    moveFurnGhost(event);
+    return;
+  }
+  if (!state.gesture) {
+    if (event.target.closest?.('.plan-svg') || state.tool === 'wall' || state.tool === 'door' || state.tool === 'window') {
+      updateHover(event);
+    }
+    return;
+  }
+  if (state.gesture.kind === 'pan') {
+    state.camera.x += event.clientX - state.gesture.x;
+    state.camera.y += event.clientY - state.gesture.y;
+    state.gesture.x = event.clientX;
+    state.gesture.y = event.clientY;
+    renderCanvas();
+    renderStatus();
+    return;
+  }
+  if (state.gesture.kind === 'select') {
+    const dist = Math.hypot(event.clientX - state.gesture.x, event.clientY - state.gesture.y);
+    if (!state.gesture.drag && dist < 4) return;
+    state.gesture.moved = true;
+    const world = view.worldFromClient(event.clientX, event.clientY);
+    if (!state.gesture.drag) {
+      const drag = beginSelectionDrag(state.gesture.hit, state.gesture.world);
+      if (!drag) return;
+      state.gesture.drag = drag;
+      state.store.begin();
+    }
+    applySelectionDrag(state.gesture.drag, world, event.shiftKey);
+    return;
+  }
+  if (state.gesture.kind === 'demolish') {
+    if (Math.hypot(event.clientX - state.gesture.x, event.clientY - state.gesture.y) > 4) state.gesture.moved = true;
+  }
+  updateHover(event);
+}
+
+function onPointerUp(event, cancel) {
+  state.pointers.delete(event.pointerId);
+  if (state.pointers.size < 2) state.pinch = null;
+  if (state.furnDrag && state.furnDrag.pointerId === event.pointerId) {
+    const drag = state.furnDrag;
+    state.furnDrag = null;
+    ui.ghost.hidden = true;
+    if (!cancel) finishFurn(drag, event);
+    return;
+  }
+  if (state.pointers.size >= 1) return;
+  const gesture = state.gesture;
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  state.gesture = null;
+  if (cancel || gesture.kind === 'pan') {
+    if (state.store?.isTransacting()) state.store.cancel();
+    renderAll();
+    return;
+  }
+  if (gesture.kind === 'select') {
+    finishSelect(gesture);
+    return;
+  }
+  updateHover(event);
+  if (gesture.kind === 'wall') placeWall(state.hoverWorld, event.shiftKey);
+  else if (gesture.kind === 'door') placeOpening();
+  else if (gesture.kind === 'measure') placeMeasure(event.shiftKey);
+  else if (gesture.kind === 'demolish' && !gesture.moved) demolishAt(state.hoverWorld);
+}
+
+function cancelGesture() {
+  if (state.store?.isTransacting()) state.store.cancel();
+  state.gesture = null;
+  state.furnDrag = null;
+  ui.ghost.hidden = true;
+}
+
+function pinch() {
+  const pts = [...state.pointers.values()];
+  if (pts.length < 2) return;
+  const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+  const midX = (pts[0].x + pts[1].x) / 2;
+  const midY = (pts[0].y + pts[1].y) / 2;
+  if (state.pinch) {
+    zoomAt(midX, midY, dist / state.pinch.dist);
+    state.camera.x += midX - state.pinch.midX;
+    state.camera.y += midY - state.pinch.midY;
+    renderCanvas();
+    renderStatus();
+  }
+  state.pinch = { dist, midX, midY };
+}
+
+function zoomAt(clientX, clientY, factor) {
+  const rect = svg.getBoundingClientRect();
+  const worldX = (clientX - rect.left - state.camera.x) / state.camera.k;
+  const worldY = (clientY - rect.top - state.camera.y) / state.camera.k;
+  const next = Math.max(0.002, Math.min(4, state.camera.k * factor));
+  state.camera.k = next;
+  state.camera.x = clientX - rect.left - worldX * next;
+  state.camera.y = clientY - rect.top - worldY * next;
+}
+
+function onWheel(event) {
+  if (state.pickerOpen) return;
+  event.preventDefault();
+  if (event.ctrlKey || Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+    zoomAt(event.clientX, event.clientY, Math.exp(-event.deltaY * 0.0015));
+  } else {
+    state.camera.x -= event.deltaX;
+    state.camera.y -= event.deltaY;
+  }
+  renderCanvas();
+  renderStatus();
+}
+
+function beginSelectionDrag(hit, world) {
+  const floor = ensureFloor();
+  if (!hit || !floor) return null;
+  if (hit.kind === 'node') {
+    const node = floor.nodes.find((item) => item.id === hit.id);
+    if (!node) return null;
+    return { kind: 'node', ids: [{ id: node.id, x: node.x, y: node.y }], world };
+  }
+  if (hit.kind === 'wall') {
+    const wall = floor.walls.find((item) => item.id === hit.id && !item.demolished);
+    if (!wall) return null;
+    const a = floor.nodes.find((item) => item.id === wall.a);
+    const b = floor.nodes.find((item) => item.id === wall.b);
+    if (!a || !b) return null;
+    return {
+      kind: 'wall',
+      ids: [{ id: a.id, x: a.x, y: a.y }, { id: b.id, x: b.x, y: b.y }],
+      world,
+    };
+  }
+  if (hit.kind === 'furniture' || hit.kind === 'rotate') {
+    const item = floor.furniture.find((entry) => entry.id === hit.id);
+    if (!item) return null;
+    return { kind: hit.kind === 'rotate' ? 'rotate' : 'furniture', item: { ...item }, world };
+  }
+  return null;
+}
+
+function applySelectionDrag(drag, world, shift) {
+  if (drag.kind === 'node' || drag.kind === 'wall') {
+    const dx = world.x - drag.world.x;
+    const dy = world.y - drag.world.y;
+    state.store.dispatch(nodesMoveCommand(state.floorId, drag.ids.map((node) => ({
+      id: node.id,
+      x: node.x + dx,
+      y: node.y + dy,
+    }))));
+    return;
+  }
+  if (drag.kind === 'furniture') {
+    let cx = drag.item.cx + (world.x - drag.world.x);
+    let cy = drag.item.cy + (world.y - drag.world.y);
+    let rot = drag.item.rot || 0;
+    if (state.prefs.furnitureSnap) {
+      const floor = ensureFloor();
+      const nodes = new Map((floor?.nodes || []).map((node) => [node.id, node]));
+      const snapped = snapFurnitureToWall({ ...drag.item, cx, cy }, floor?.walls || [], nodes);
+      if (snapped) {
+        cx = snapped.cx;
+        cy = snapped.cy;
+        rot = snapped.rot;
+      }
+    }
+    state.store.dispatch(furniturePatchCommand(state.floorId, drag.item.id, { cx, cy, rot }));
+    return;
+  }
+  if (drag.kind === 'rotate') {
+    let rot = angleDeg(world.x - drag.item.cx, world.y - drag.item.cy) + 90;
+    if (!shift) rot = Math.round(rot / 15) * 15;
+    rot = ((rot % 360) + 360) % 360;
+    state.store.dispatch(furniturePatchCommand(state.floorId, drag.item.id, { rot }));
+  }
+}
+
+function finishSelect(gesture) {
+  if (gesture.drag) {
+    if (gesture.drag.kind === 'node' || gesture.drag.kind === 'wall') {
+      state.store.dispatch(bakeCommand(state.floorId));
+    }
+    state.store.commit();
+    const floor = ensureFloor();
+    if (gesture.drag.kind === 'furniture' || gesture.drag.kind === 'rotate') {
+      state.selection = { kind: 'furniture', id: gesture.drag.item.id };
+    } else if (gesture.hit) {
+      const id = gesture.hit.kind === 'wall' ? gesture.hit.id : gesture.hit.wallId;
+      state.selection = floor?.walls.some((wall) => wall.id === id) ? { kind: 'wall', id } : null;
+    }
+    renderAll();
+    return;
+  }
+  if (!gesture.moved) selectFromHit(gesture.hit);
+}
+
+function startFurn(button, event) {
+  const entry = catalogEntry(button.dataset.furn);
+  if (!entry || !state.store) return;
+  state.furnDrag = { type: entry.type, pointerId: event.pointerId };
+  ui.ghost.hidden = false;
+  ui.ghost.textContent = state.prefs.lang === 'en' ? entry.nameEn : entry.name;
+  moveFurnGhost(event);
+}
+
+function moveFurnGhost(event) {
+  ui.ghost.style.left = `${event.clientX}px`;
+  ui.ghost.style.top = `${event.clientY}px`;
+}
+
+function finishFurn(drag, event) {
+  const rect = svg.getBoundingClientRect();
+  const inside = event.clientX >= rect.left && event.clientX <= rect.right
+    && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  if (!inside || svg.hidden || !state.store) return;
+  const entry = catalogEntry(drag.type);
+  if (!entry) return;
+  const world = view.worldFromClient(event.clientX, event.clientY);
+  const floor = ensureFloor();
+  let pose = { cx: world.x, cy: world.y, rot: 0 };
+  if (state.prefs.furnitureSnap && floor) {
+    const nodes = new Map(floor.nodes.map((node) => [node.id, node]));
+    const snapped = snapFurnitureToWall(
+      { cx: world.x, cy: world.y, w: entry.w, d: entry.d },
+      floor.walls,
+      nodes,
+    );
+    if (snapped) pose = { cx: snapped.cx, cy: snapped.cy, rot: snapped.rot };
+  }
+  const item = {
+    id: uniqueId('furn'),
+    type: entry.type,
+    name: state.prefs.lang === 'en' ? entry.nameEn : entry.name,
+    cx: pose.cx,
+    cy: pose.cy,
+    z: 0,
+    w: entry.w,
+    d: entry.d,
+    h: entry.h,
+    rot: pose.rot || 0,
+    color: entry.color,
+  };
+  state.store.dispatch(furnitureAddCommand(state.floorId, item));
+  state.selection = { kind: 'furniture', id: item.id };
+  renderAll();
+}
+
+function onKeyDown(event) {
+  if (event.code === 'Space') {
+    if (!typing(event.target)) {
+      state.space = true;
+      event.preventDefault();
+    }
+    return;
+  }
+  if (modalResolver) {
+    if (event.key === 'Escape') { event.preventDefault(); closeModal(false); }
+    else if (event.key === 'Enter') { event.preventDefault(); closeModal(true); }
+    return;
+  }
+  if (event.repeat || typing(event.target)) return;
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  const mod = event.ctrlKey || event.metaKey;
+  if (mod && key === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if (mod && key === 'y') { event.preventDefault(); redo(); return; }
+  if (mod && key === 'd') { event.preventDefault(); duplicateSelection(); return; }
+  if (mod || event.altKey) return;
+  if (/^[0-9]$/.test(event.key) && state.tool === 'wall' && state.mode === 'plan') {
+    event.preventDefault();
+    if (state.lengthBuf.length < 7) state.lengthBuf += event.key;
+    patchLength();
+    renderCanvas();
+    return;
+  }
+  if (event.key === 'Enter' && state.tool === 'wall' && state.chain && state.lengthBuf) {
+    event.preventDefault();
+    const len = Number(state.lengthBuf);
+    state.lengthBuf = '';
+    if (len >= 50) placeAtLength(len);
+    else patchLength();
+    return;
+  }
+  if (event.key === 'Backspace' && state.tool === 'wall' && state.chain) {
+    event.preventDefault();
+    if (state.lengthBuf) {
+      state.lengthBuf = state.lengthBuf.slice(0, -1);
+      patchLength();
+      return;
+    }
+    if (state.chain.steps > 0) undo();
+    else {
+      state.chain = null;
+      renderAll();
+    }
+    return;
+  }
+  if (event.key === 'Backspace' || event.key === 'Delete') {
+    event.preventDefault();
+    deleteSelection();
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (state.chain) {
+      state.chain = null;
+      state.lengthBuf = '';
+      renderAll();
+      return;
+    }
+    if (state.measure) {
+      state.measure = null;
+      renderCanvas();
+      return;
+    }
+    state.selection = null;
+    renderAll();
+    return;
+  }
+  if (key === 'f') { flipSwing(); return; }
+  if (key === 'r') {
+    if (state.selection?.kind === 'furniture' || state.mode === 'furnish') {
+      if (state.selection?.kind === 'furniture') rotateSelected(15);
+      return;
+    }
+    setTool('room');
+    return;
+  }
+  if (key === 't') { void enter3d(true); return; }
+  const toolByKey = { v: 'select', w: 'wall', d: 'door', n: 'window', x: 'demolish', m: 'measure', h: 'pan' };
+  if (toolByKey[key]) setTool(toolByKey[key]);
+}
+
+function onKeyUp(event) {
+  if (event.code === 'Space') state.space = false;
+  state.shift = event.shiftKey;
+}
+
+function undo() {
+  if (!state.store) return;
+  state.store.undo();
+  if (state.chain && state.chain.steps > 0) {
+    state.chain.steps -= 1;
+    state.chain.points.pop();
+    bindChainNodes();
+    if (!state.chain.points.length) state.chain = null;
+  }
+  state.gesture = null;
+  renderAll();
+}
+
+function redo() {
+  if (!state.store || state.store.isTransacting()) return;
+  state.store.redo();
+  state.chain = null;
+  state.lengthBuf = '';
+  renderAll();
+}
+
+function rotateSelected(delta) {
+  const floor = ensureFloor();
+  if (state.selection?.kind !== 'furniture' || !floor) return;
+  const item = floor.furniture.find((entry) => entry.id === state.selection.id);
+  if (!item) return;
+  let rot = ((item.rot || 0) + delta) % 360;
+  if (rot < 0) rot += 360;
+  state.store.dispatch(furniturePatchCommand(state.floorId, item.id, { rot }));
+}
+
+function flipSwing() {
+  if (state.selection?.kind === 'opening') {
+    const floor = ensureFloor();
+    const opening = floor?.openings.find((item) => item.id === state.selection.id);
+    if (!opening) return;
+    patchSelectedOpening({ swing: opening.swing === 'out' ? 'in' : 'out' });
+    return;
+  }
+  state.openingSwing = state.openingSwing === 'out' ? 'in' : 'out';
+  if (state.hoverWorld && (state.tool === 'door' || state.tool === 'window')) {
+    state.openingPreview = previewOpening(
+      state.store.getPlan(),
+      state.floorId,
+      state.hoverWorld,
+      openingSpec(),
+      state.camera.k,
+    );
+    renderCanvas();
+  }
+}
+
+function deleteSelection() {
+  const sel = state.selection;
+  const floor = ensureFloor();
+  if (!sel || !floor || !state.store) return;
+  if (sel.kind === 'wall') {
+    const count = floor.openings.filter((opening) => opening.wall === sel.id).length;
+    state.store.dispatch(wallDeleteCommand(state.floorId, sel.id));
+    state.selection = null;
+    toast(t('toast.deleted', { n: count }));
+    return;
+  }
+  if (sel.kind === 'opening') {
+    state.store.dispatch(openingDeleteCommand(state.floorId, sel.id));
+    state.selection = null;
+    return;
+  }
+  if (sel.kind === 'furniture') {
+    state.store.dispatch(furnitureDeleteCommand(state.floorId, sel.id));
+    state.selection = null;
+  }
+}
+
+function duplicateSelection() {
+  if (state.selection?.kind !== 'furniture' || !state.store) return;
+  const floor = ensureFloor();
+  const before = new Set((floor?.furniture || []).map((item) => item.id));
+  state.store.dispatch(furnitureDuplicateCommand(state.floorId, state.selection.id));
+  const created = ensureFloor()?.furniture.find((item) => !before.has(item.id));
+  if (created) state.selection = { kind: 'furniture', id: created.id };
+  renderAll();
+}
+
+function patchSelectedWall(patch) {
+  if (state.selection?.kind !== 'wall' || !state.store) return;
+  if (patch.virtual === true || patch.thickness != null) {
+    const trial = structuredClone(state.store.getPlan());
+    const result = patchWall(trial, state.floorId, state.selection.id, patch);
+    if (!result.ok && result.reason === 'openings') {
+      state.formError = t('toast.virtualOpenings');
+      renderChrome();
+      return;
+    }
+  }
+  state.formError = '';
+  if (patch.thickness != null && (Number(patch.thickness) < 60 || Number(patch.thickness) > 500)) {
+    state.formError = t('wall.thicknessHint');
+  }
+  state.store.dispatch(wallPatchCommand(state.floorId, state.selection.id, patch));
+  renderChrome();
+}
+
+function patchSelectedOpening(patch) {
+  if (state.selection?.kind !== 'opening' || !state.store) return;
+  const id = state.selection.id;
+  const trial = structuredClone(state.store.getPlan());
+  const result = updateOpening(trial, state.floorId, id, patch, checkOpeningPlacement);
+  if (!result.ok) {
+    const floor = ensureFloor();
+    const opening = floor?.openings.find((item) => item.id === id);
+    const info = openingClearance(state.store.getPlan(), state.floorId, id);
+    state.formError = explainOpening({
+      code: result.code || result.errors?.[0]?.code,
+      kind: patch.kind || opening?.kind,
+      width: patch.width ?? opening?.width,
+      segmentLength: info?.segmentLength,
+    });
+    renderChrome();
+    return;
+  }
+  state.formError = '';
+  state.store.dispatch(openingPatchCommand(state.floorId, id, patch));
+}
+
+function demolishAt(world) {
+  const hit = pick(world);
+  let wallId = null;
+  const floor = ensureFloor();
+  if (hit?.kind === 'wall') wallId = hit.id;
+  else if (hit?.kind === 'node') wallId = hit.wallId;
+  else if (hit?.kind === 'opening') wallId = floor?.openings.find((item) => item.id === hit.id)?.wall || null;
+  if (wallId) void confirmDemolish(wallId);
+}
+
+async function confirmDemolish(wallId) {
+  if (modalResolver || !state.store) return;
+  const preview = previewDemolish(state.store.getPlan(), state.floorId, wallId);
+  if (!preview) return;
+  if (preview.bearing) {
+    state.shakeId = wallId;
+    renderCanvas();
+    toast(t('demolish.bearing'), 'danger', null, 2500);
+    window.setTimeout(() => {
+      if (state.shakeId === wallId) {
+        state.shakeId = null;
+        renderCanvas();
+      }
+    }, 240);
+    return;
+  }
+  state.condemnedId = wallId;
+  renderCanvas();
+  const before = polysOf(preview.before);
+  const after = polysOf(preview.after);
+  const bounds = boundsOf(before.concat(after));
+  const openings = preview.openings.length
+    ? `<ul>${preview.openings.map((item) => `<li>${escapeHtml(item.kind)} ${Math.round(item.width)} mm</li>`).join('')}</ul>`
+    : `<p class="note">${escapeHtml(t('demolish.none'))}</p>`;
+  const name = preview.largerRoom?.name || '';
+  const ok = await showModal({
+    title: t('demolish.title'),
+    body: `
+      <div class="thumbs">
+        <figure><figcaption>${escapeHtml(t('demolish.before'))}</figcaption>${miniSvg(before, bounds)}</figure>
+        <figure><figcaption>${escapeHtml(t('demolish.after'))}</figcaption>${miniSvg(after, bounds)}</figure>
+      </div>
+      <p class="formula">${escapeHtml(t('demolish.formula', {
+        a: formatAreaMm2(preview.aArea),
+        b: formatAreaMm2(preview.bArea),
+        c: formatAreaMm2(preview.wallFootprint),
+        d: formatAreaMm2(preview.merged),
+      }))}</p>
+      <p>${escapeHtml(t('demolish.inherit', { name }))}</p>
+      <p class="kicker">${escapeHtml(t('demolish.openings'))}</p>
+      ${openings}
+      <p class="note">${escapeHtml(t('demolish.note'))}</p>`,
+    confirm: t('demolish.confirm'),
+    cancel: t('demolish.cancel'),
+    danger: true,
+  });
+  state.condemnedId = null;
+  if (!ok) {
+    renderCanvas();
+    return;
+  }
+  state.store.dispatch(wallDemolishCommand(state.floorId, wallId));
+  state.mergeId = preview.survivorId;
+  state.selection = preview.survivorId ? { kind: 'room', id: preview.survivorId } : null;
+  renderAll();
+  window.setTimeout(() => {
+    state.mergeId = null;
+    renderCanvas();
+  }, 300);
+}
+
+function polysOf(result) {
+  const types = new Map((result?.rooms || []).map((room) => [room.id, room.type]));
+  return (result?.derived || []).map((face) => ({
+    points: face.polygon?.length >= 3 ? face.polygon : face.centerline,
+    fill: roomFillVar(types.get(face.roomId)),
+  })).filter((poly) => poly.points?.length >= 3);
+}
+
+function boundsOf(polys) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const poly of polys) {
+    for (const point of poly.points || []) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  if (!Number.isFinite(minX)) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  return { minX, minY, maxX, maxY };
+}
+
+function miniSvg(polys, bounds) {
+  const viewBox = thumbView(polys, bounds, { width: 220, height: 140, pad: 10 });
+  const body = viewBox.polys.map((poly) => {
+    const points = poly.points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+    return `<polygon points="${points}" fill="${poly.fill}" stroke="var(--line-2)" stroke-width="1"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${viewBox.width} ${viewBox.height}" width="220" height="140">${body}</svg>`;
+}
+
+function showModal({ title, body, confirm, cancel, danger }) {
+  ui.modals.innerHTML = `
+    <div class="modal-mask">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3>${escapeHtml(title)}</h3>
+        <div class="modal-body">${body}</div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-action="modal-cancel">${escapeHtml(cancel || t('common.cancel'))}</button>
+          <button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-action="modal-ok">${escapeHtml(confirm || t('common.confirm'))}</button>
+        </div>
+      </div>
+    </div>`;
+  return new Promise((resolve) => { modalResolver = resolve; });
+}
+
+function closeModal(ok) {
+  ui.modals.innerHTML = '';
+  const resolve = modalResolver;
+  modalResolver = null;
+  if (resolve) resolve(ok);
+}
+
+function onClick(event) {
+  if (modalResolver) {
+    if (event.target.closest('[data-action="modal-ok"]')) { closeModal(true); return; }
+    if (event.target.closest('[data-action="modal-cancel"]')) { closeModal(false); return; }
+    if (event.target.classList?.contains('modal-mask')) { closeModal(false); return; }
+    return;
+  }
+  const search = event.target.closest?.('[data-search]');
+  if (search) return;
+  const mode = event.target.closest?.('[data-mode]')?.dataset.mode;
+  if (mode) { setMode(mode); return; }
+  const actionNode = event.target.closest?.('[data-action]');
+  if (actionNode) { onAction(actionNode.dataset.action, actionNode, event); return; }
+  const tool = event.target.closest?.('[data-tool]')?.dataset.tool;
+  if (tool) { setTool(tool); return; }
+  const floorId = event.target.closest?.('[data-floor]')?.dataset.floor;
+  if (floorId) { selectFloor(floorId); return; }
+  const template = event.target.closest?.('[data-template]')?.dataset.template;
+  if (template) { void loadTemplate(template); return; }
+  if (event.target.closest?.('[data-blank]')) { newBlank(); return; }
+  const room = event.target.closest?.('[data-room]')?.dataset.room;
+  if (room) {
+    state.selection = { kind: 'room', id: room };
+    state.formError = '';
+    renderAll();
+    return;
+  }
+  if (!event.target.closest?.('.menu')) closeMenus();
+}
+
+function onAction(action, node, event) {
+  if (action === 'plan-menu' || action === 'file-menu') {
+    toggleMenu(action === 'plan-menu' ? 'plan' : 'file');
+    event?.stopPropagation();
+    return;
+  }
+  closeMenus();
+  if (action === 'undo') undo();
+  else if (action === 'redo') redo();
+  else if (action === 'share' || action === 'export-png') toast(t('toast.soon'));
+  else if (action === 'export-json') exportJSON();
+  else if (action === 'import-json') ui.file.click();
+  else if (action === 'lang') void toggleLang();
+  else if (action === 'view3d') void enter3d(false);
+  else if (action === 'inspector') ui.inspector.classList.toggle('is-open');
+  else if (action === 'show-picker') void showPicker();
+  else if (action === 'open-plan') openStored(node.dataset.id);
+  else if (action === 'copy-plan') copyPlan(node.dataset.id);
+  else if (action === 'rename-plan') renamePlan(node.dataset.id);
+  else if (action === 'delete-plan') void deletePlan(node.dataset.id);
+  else if (action === 'open-recent') openRecent();
+  else if (action === 'pref-virtual') setPref({ wallVirtual: node.dataset.value === '1' });
+  else if (action === 'pref-thickness') setPref({ wallThickness: Number(node.dataset.value) });
+  else if (action === 'wall-virtual') patchSelectedWall({ virtual: node.dataset.value === '1' });
+  else if (action === 'demolish' && state.selection?.kind === 'wall') void confirmDemolish(state.selection.id);
+  else if (action === 'delete-selection') deleteSelection();
+  else if (action === 'duplicate-selection') duplicateSelection();
+  else if (action === 'opening-width') patchSelectedOpening({ width: Number(node.dataset.value) });
+  else if (action === 'opening-kind') patchSelectedOpening({ kind: node.dataset.value });
+  else if (action === 'opening-swing') patchSelectedOpening({ swing: node.dataset.value });
+  else if (action === 'opening-hinge') patchSelectedOpening({ hinge: node.dataset.value });
+  else if (action === 'opening-center') patchSelectedOpening({ t: 0.5 });
+  else if (action === 'conflict-load') loadRemote();
+  else if (action === 'conflict-keep') { ui.banner.hidden = true; saveNow(); }
+}
+
+function onChangeInput(event) {
+  const el = event.target;
+  if (el.dataset?.pref) { applyPref(el.dataset.pref, el); return; }
+  const field = el.dataset?.field;
+  if (!field || !state.store) return;
+  if (field === 'wall-thickness') patchSelectedWall({ thickness: Number(el.value) });
+  else if (field === 'wall-height') patchSelectedWall({ height: el.value.trim() === '' ? null : Number(el.value) });
+  else if (field === 'wall-bearing') patchSelectedWall({ bearing: el.checked });
+  else if (field === 'wall-exterior') patchSelectedWall({ exterior: el.checked });
+  else if (field === 'room-name') state.store.dispatch(roomPatchCommand(state.floorId, state.selection.id, { name: el.value }));
+  else if (field === 'room-type') state.store.dispatch(roomPatchCommand(state.floorId, state.selection.id, { type: el.value }));
+  else if (field === 'room-floor') state.store.dispatch(roomPatchCommand(state.floorId, state.selection.id, { floor: el.value }));
+  else if (field === 'opening-width') patchSelectedOpening({ width: Number(el.value) });
+  else if (field === 'opening-height') patchSelectedOpening({ height: Number(el.value) });
+  else if (field === 'opening-sill') patchSelectedOpening({ sill: Number(el.value) });
+  else if (field === 'furn-name') state.store.dispatch(furniturePatchCommand(state.floorId, state.selection.id, { name: el.value }));
+  else if (field === 'furn-w') state.store.dispatch(furniturePatchCommand(state.floorId, state.selection.id, { w: Number(el.value) }));
+  else if (field === 'furn-d') state.store.dispatch(furniturePatchCommand(state.floorId, state.selection.id, { d: Number(el.value) }));
+  else if (field === 'furn-h') state.store.dispatch(furniturePatchCommand(state.floorId, state.selection.id, { h: Number(el.value) }));
+  else if (field === 'furn-color') state.store.dispatch(furniturePatchCommand(state.floorId, state.selection.id, { color: el.value }));
+}
+
+function onInput(event) {
+  const search = event.target.closest?.('[data-search]');
+  if (!search) return;
+  const query = search.value.trim().toLowerCase();
+  for (const item of ui.side.querySelectorAll('[data-furn]')) {
+    const name = (item.dataset.name || '').toLowerCase();
+    item.hidden = !!query && !name.includes(query);
+  }
+}
+
+function applyPref(name, el) {
+  const value = el.type === 'checkbox' ? el.checked : Number(el.value);
+  setPref({ [name]: value });
+  if (el.type !== 'checkbox' && el.isConnected) el.value = state.prefs[name];
+}
+
+function setPref(partial) {
+  try {
+    state.prefs = writePrefs(storage, { ...state.prefs, ...partial });
+  } catch {
+    toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+    return;
+  }
+  state.panelKey = '';
+  renderAll();
+}
+
+function selectFloor(floorId) {
+  state.floorId = floorId;
+  state.selection = null;
+  state.chain = null;
+  state.view3d?.setCurrentFloor?.(floorId);
+  renderAll();
+  scheduleFit();
+}
+
+function toggleMenu(name) {
+  const menu = ui.top.querySelector(`[data-menu="${name}"]`);
+  if (!menu) return;
+  const open = menu.hidden;
+  closeMenus();
+  if (!open) return;
+  if (name === 'plan') fillPlanMenu(menu);
+  menu.hidden = false;
+}
+
+function closeMenus() {
+  for (const menu of ui.top.querySelectorAll('[data-menu]')) menu.hidden = true;
+}
+
+function fillPlanMenu(menu) {
+  const list = sortPlans(readIndex(storage));
+  const current = state.store?.getPlan()?.meta?.id;
+  const rows = list.map((item) => `
+    <button type="button" class="item" data-action="open-plan" data-id="${escapeHtml(item.id)}">
+      <span>${escapeHtml(item.name)}</span>
+      <small>${escapeHtml(formatStamp(item.updatedAt))}${item.id === current ? ` · ${escapeHtml(t('plan.current'))}` : ''}</small>
+    </button>
+    <div class="row-actions">
+      <button type="button" data-action="rename-plan" data-id="${escapeHtml(item.id)}">${escapeHtml(t('plan.rename'))}</button>
+      <button type="button" data-action="copy-plan" data-id="${escapeHtml(item.id)}">${escapeHtml(t('plan.duplicate'))}</button>
+      <button type="button" data-action="delete-plan" data-id="${escapeHtml(item.id)}">${escapeHtml(t('plan.delete'))}</button>
+    </div>`).join('');
+  menu.innerHTML = `
+    <button type="button" class="item" data-action="show-picker"><strong>${escapeHtml(t('plan.new'))}</strong></button>
+    ${rows || `<p class="muted">${escapeHtml(t('picker.none'))}</p>`}`;
+}
+
+function formatStamp(ts) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`;
+}
+
+async function showPicker() {
+  if (state.store && state.armed) saveNow();
+  state.pickerOpen = true;
+  syncPicker();
+  await refreshPicker();
+}
+
+async function refreshPicker() {
+  let index = { templates: [] };
+  try {
+    const res = await fetch(new URL('../../templates/index.json', import.meta.url));
+    if (res.ok) index = await res.json();
+  } catch { /* blank card still works */ }
+  const cards = [];
+  for (const item of index.templates || []) {
+    try {
+      const res = await fetch(new URL(`../../templates/${item.file}`, import.meta.url));
+      const doc = await res.json();
+      cards.push({
+        id: item.id,
+        name: item.name,
+        net: aboutNetM2(planNetM2(doc.plan), item.netAreaM2),
+        model: roomThumbModel(doc.plan),
+        plan: doc.plan,
+      });
+    } catch {
+      cards.push({
+        id: item.id,
+        name: item.name,
+        net: aboutNetM2(null, item.netAreaM2),
+        model: null,
+        plan: null,
+      });
+    }
+  }
+  state.templates = cards;
+  renderPicker();
+}
+
+function renderPicker() {
+  const cards = state.templates.map((card) => {
+    const area = card.net == null ? '' : t('picker.area', { area: card.net });
+    return `<button type="button" class="card" data-template="${escapeHtml(card.id)}" data-testid="template-${escapeHtml(card.id)}">
+      <div class="thumb">${thumbMarkup(card.model)}</div>
+      <strong>${escapeHtml(card.name)}</strong>
+      <span>${escapeHtml(area)}</span>
+    </button>`;
+  }).join('');
+  const last = readLastId(storage);
+  const recentOk = !!(last && readPlan(storage, last));
+  ui.picker.innerHTML = `
+    <h2>${escapeHtml(t('picker.title'))}</h2>
+    <p class="lead">${escapeHtml(t('picker.lead'))}</p>
+    <div class="picker-tabs"><div class="seg">
+      <button type="button" class="is-on">${escapeHtml(t('picker.apartment'))}</button>
+      <button type="button" disabled title="${escapeHtml(t('picker.houseTip'))}">${escapeHtml(t('picker.house'))}</button>
+    </div></div>
+    <div class="cards">
+      <button type="button" class="card is-default" data-blank data-testid="blank">
+        <div class="thumb"><svg width="150" height="110" viewBox="0 0 150 110"><rect x="25" y="15" width="100" height="80" rx="4" fill="none" stroke="var(--line-2)" stroke-width="2" stroke-dasharray="6 5"/><path d="M75 42v26M62 55h26" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/></svg></div>
+        <strong>${escapeHtml(t('picker.blank'))}</strong>
+        <span>${escapeHtml(t('picker.blankHint'))}</span>
+      </button>
+      ${cards}
+    </div>
+    <div class="picker-name"><input data-plan-input placeholder="${escapeHtml(t('picker.name'))}" /></div>
+    <div class="picker-links">
+      <button type="button" class="btn" data-action="import-json">${escapeHtml(t('picker.import'))}</button>
+      <button type="button" class="btn" data-action="open-recent" ${recentOk ? '' : 'disabled'}>${escapeHtml(t('picker.recent'))}</button>
+    </div>`;
+}
+
+function thumbMarkup(model) {
+  if (!model) return '';
+  const box = thumbView(model.polys, model, { width: 150, height: 110, pad: 8 });
+  const body = box.polys.map((poly) => {
+    const points = poly.points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+    return `<polygon points="${points}" fill="${poly.fill}"/>`;
+  }).join('');
+  return `<svg width="150" height="110" viewBox="0 0 150 110">${body}</svg>`;
+}
+
+function chosenName() {
+  return ui.picker.querySelector('[data-plan-input]')?.value?.trim() || '';
+}
+
+function newBlank() {
+  const name = chosenName();
+  adopt(createEmptyPlan(name ? { name } : {}), {
+    save: true,
+    arm: true,
+    tool: 'wall',
+    hint: t('hint.firstWall'),
+  });
+}
+
+async function loadTemplate(id) {
+  const card = state.templates.find((item) => item.id === id);
+  if (!card?.plan) return;
+  const name = chosenName();
+  adopt(clonePlanFresh(card.plan, name ? { name } : {}), { save: true, arm: true, tool: 'select' });
+}
+
+function openRecent() {
+  const id = readLastId(storage);
+  if (id) openStored(id);
+}
+
+function openStored(id) {
+  const plan = readPlan(storage, id);
+  if (!plan) return;
+  const errors = validatePlan(plan).filter((item) => item.severity !== 'warning');
+  if (errors.length) {
+    toast(errors.map((item) => item.message).join('；'), 'danger');
+    return;
+  }
+  adopt(plan, { save: false, arm: true });
+}
+
+function copyPlan(id) {
+  const current = state.store?.getPlan();
+  const source = current?.meta?.id === id ? current : readPlan(storage, id);
+  if (!source) return;
+  const copy = clonePlanFresh(source, { name: `${source.meta.name} ${t('plan.copySuffix')}` });
+  const result = writePlan(storage, copy);
+  if (!result.ok) {
+    toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+    return;
+  }
+  adopt(copy, { save: false, arm: true });
+}
+
+function renamePlan(id) {
+  const current = state.store?.getPlan();
+  if (current?.meta?.id === id) {
+    const input = ui.top.querySelector('[data-plan-name]');
+    input?.focus();
+    input?.select();
+    return;
+  }
+  const stored = readPlan(storage, id);
+  if (!stored) return;
+  const name = window.prompt(t('plan.rename'), stored.meta.name);
+  if (!name?.trim()) return;
+  const result = renameStored(storage, id, name.trim(), Date.now());
+  if (!result.ok) toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+}
+
+async function deletePlan(id) {
+  const ok = await showModal({
+    title: t('plan.deleteTitle'),
+    body: `<p>${escapeHtml(t('plan.deleteBody'))}</p>`,
+    confirm: t('plan.delete'),
+    danger: true,
+  });
+  if (!ok) return;
+  removePlan(storage, id);
+  if (state.store?.getPlan()?.meta?.id !== id) return;
+  const rest = sortPlans(readIndex(storage));
+  if (rest.length) {
+    const next = readPlan(storage, rest[0].id);
+    if (next) adopt(next, { save: false, arm: true });
+    else {
+      state.armed = false;
+      void showPicker();
+    }
+  } else {
+    state.armed = false;
+    void showPicker();
+  }
+}
+
+async function importFile(file) {
+  let text = '';
+  try { text = await file.text(); } catch { toast(t('toast.saveFail'), 'danger'); return; }
+  const result = importPlanJSON(text);
+  if (!result.ok) {
+    toast(result.errors.map((item) => item.message).filter(Boolean).join('；'), 'danger');
+    return;
+  }
+  adopt(result.plan, { save: true, arm: true, multiToast: true });
+}
+
+function exportJSON() {
+  if (!state.store) return;
+  const plan = state.store.getPlan();
+  const blob = new Blob([exportPlanJSON(plan)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${plan.meta?.name || 'plan'}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+}
+
+function scheduleSave() {
+  if (!state.armed || state.pickerOpen || !state.store || state.store.isTransacting()) return;
+  state.saveState = 'dirty';
+  renderStatus();
+  window.clearTimeout(state.saveTimer);
+  state.saveTimer = window.setTimeout(saveNow, 500);
+}
+
+function saveNow() {
+  if (!state.store || state.pickerOpen || state.store.isTransacting()) return;
+  state.saveState = 'saving';
+  try {
+    state.store.touch(Date.now());
+    const result = writePlan(storage, state.store.getPlan());
+    if (!result.ok) {
+      state.saveState = 'error';
+      toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+      renderStatus();
+      return;
+    }
+    state.saveState = 'saved';
+    if (result.warn && !state.quotaToasted) {
+      state.quotaToasted = true;
+      toast(t('toast.quota'), 'warn');
+    }
+  } catch {
+    state.saveState = 'error';
+    toast(t('toast.saveFail'), 'danger', { label: t('toast.backup'), run: exportJSON });
+  }
+  renderStatus();
+}
+
+function onStorage(event) {
+  if (!state.store || state.quiet) return;
+  const id = state.store.getPlan()?.meta?.id;
+  if (!id || event.key !== planKey(id)) return;
+  ui.banner.hidden = false;
+}
+
+function loadRemote() {
+  const id = state.store?.getPlan()?.meta?.id;
+  ui.banner.hidden = true;
+  if (!id) return;
+  const other = readPlan(storage, id);
+  if (!other) return;
+  const errors = validatePlan(other).filter((item) => item.severity !== 'warning');
+  if (errors.length) {
+    toast(errors.map((item) => item.message).join('；'), 'danger');
+    return;
+  }
+  adopt(other, { save: false, arm: true });
+}
+
+async function toggleLang() {
+  const lang = state.prefs.lang === 'zh' ? 'en' : 'zh';
+  state.prefs = writePrefs(storage, { ...state.prefs, lang });
+  try { state.messages = await loadLocale(lang); } catch { /* keep previous copy */ }
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+  document.title = t('app.title');
+  state.panelKey = '';
+  renderAll();
+  if (!ui.picker.hidden) renderPicker();
+}
+
+async function probe3d() {
+  try {
+    const mod = await import('../view3d/index.js');
+    state.view3dMod = mod;
+    if (typeof mod.isWebGLAvailable === 'function') {
+      state.webgl = mod.isWebGLAvailable();
+      if (state.webgl && state.webgl.ok === false) {
+        for (const button of document.querySelectorAll('[data-action="view3d"], [data-mode="view3d"]')) {
+          button.disabled = true;
+          button.title = state.webgl.reason || '';
+        }
+      }
+    }
+  } catch {
+    state.view3dMod = null;
+  }
+}
+
+async function enter3d(fromKey) {
+  if (fromKey && state.mode === 'view3d') return;
+  if (state.webgl && state.webgl.ok === false) return;
+  let mod = state.view3dMod;
+  if (!mod) {
+    try {
+      mod = await import('../view3d/index.js');
+      state.view3dMod = mod;
+    } catch {
+      mod = null;
+    }
+  }
+  if (!mod || typeof mod.createView3D !== 'function') {
+    toast(t('toast.view3dPending'));
+    return;
+  }
+  const host = document.getElementById('view3d-host');
+  try {
+    if (!state.view3d) {
+      state.view3d = await mod.createView3D({
+        container: host,
+        getPlan: () => state.store.getPlan(),
+        floorId: state.floorId,
+        reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        onSelectFurniture: (id) => {
+          state.selection = id ? { kind: 'furniture', id } : null;
+          state.panelKey = '';
+          renderChrome();
+        },
+      });
+    }
+    state.mode = 'view3d';
+    host.hidden = false;
+    svg.hidden = true;
+    await state.view3d.enter?.({ animate: true });
+    state.view3d.setCurrentFloor?.(state.floorId);
+    state.view3d.select?.(state.selection?.kind === 'furniture' ? state.selection.id : null);
+    renderChrome();
+  } catch {
+    if (host) host.hidden = true;
+    svg.hidden = false;
+    state.mode = 'plan';
+    toast(t('toast.view3dPending'));
+  }
+}
+
+function exit3d() {
+  try { state.view3d?.exit?.(); } catch { /* 2D remains the editor */ }
+  const host = document.getElementById('view3d-host');
+  if (host) host.hidden = true;
+  svg.hidden = false;
+  if (state.mode === 'view3d') state.mode = 'plan';
+}
+
+function toast(text, tone = '', action = null, ms = 2600) {
+  const node = document.createElement('div');
+  node.className = `toast${tone ? ` ${tone}` : ''}`;
+  node.dataset.testid = 'toast';
+  const span = document.createElement('span');
+  span.textContent = text;
+  node.append(span);
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = action.label;
+    button.addEventListener('click', () => action.run());
+    node.append(button);
+  }
+  ui.toasts.replaceChildren(node);
+  window.clearTimeout(state.toastTimer);
+  if (ms > 0) {
+    state.toastTimer = window.setTimeout(() => {
+      if (node.isConnected) node.remove();
+    }, ms);
+  }
+}
+
+function showHint(text) {
+  ui.hint.hidden = false;
+  ui.hint.classList.remove('is-hide');
+  ui.hint.textContent = text;
+  window.clearTimeout(state.hintTimer);
+  state.hintTimer = window.setTimeout(() => {
+    ui.hint.classList.add('is-hide');
+    window.setTimeout(() => { ui.hint.hidden = true; }, 400);
+  }, 3000);
+}
+
+function showPill(text) {
+  ui.pill.hidden = false;
+  ui.pill.classList.remove('is-hide');
+  ui.pill.textContent = text;
+  window.clearTimeout(state.pillTimer);
+  state.pillTimer = window.setTimeout(() => {
+    ui.pill.classList.add('is-hide');
+    window.setTimeout(() => { ui.pill.hidden = true; }, 400);
+  }, 2000);
+}

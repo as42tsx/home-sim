@@ -1,11 +1,21 @@
-/**
- * Local plan store (later milestone). No network and no accounts.
- *
- * localStorage keys:
- * - `homesim:index` — saved-plan list (id, name, updatedAt)
- * - `homesim:plan:<id>` — one plan document
- *
- * When stored bytes pass 80% of the quota the editor shows a warning.
- * Undo history is capped at 200 steps (UNDO_LIMIT) and is not written here.
- */
-export {};
+/** Local plan persistence. Undo history is not written here. */
+
+export {
+  DEFAULT_QUOTA_BYTES,
+  INDEX_KEY,
+  LAST_KEY,
+  PREFS_KEY,
+  estimateBytes,
+  estimateUsage,
+  planKey,
+  readIndex,
+  readLastId,
+  readPlan,
+  readPrefs,
+  removePlan,
+  renameStored,
+  sortPlans,
+  writeLastId,
+  writePlan,
+  writePrefs,
+} from './local.js';

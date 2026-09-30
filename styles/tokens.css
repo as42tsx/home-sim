@@ -93,11 +93,13 @@
   --ease-in-out:cubic-bezier(.65,0,.35,1);
   --ease-spring:cubic-bezier(.34,1.56,.64,1); /* 仅用于放下家具、气泡弹出 */
   --dur-fast:120ms;   /* hover、按下 */
-  --dur-base:200ms;   /* 面板切换、吸附指示出现 */
+  --dur-base:200ms;   /* 面板切换、吸附指示出现、房间填色 */
   --dur-slow:320ms;   /* 抽屉、弹窗 */
   --dur-view:900ms;   /* 2D↔3D 过渡总时长 */
+  --dur-shake:240ms;  /* 承重墙拒绝：左右 4px，两下 */
+  --dur-merge:300ms;  /* 拆墙后房间合并 */
   --z-canvas:0; --z-panel:10; --z-float:20; --z-drawer:30; --z-modal:40; --z-toast:50;
 }
 @media (prefers-reduced-motion: reduce){
-  :root{ --dur-fast:0ms; --dur-base:0ms; --dur-slow:0ms; --dur-view:200ms; }
+  :root{ --dur-fast:0ms; --dur-base:0ms; --dur-slow:0ms; --dur-view:200ms; --dur-shake:0ms; --dur-merge:0ms; }
 }

@@ -16,11 +16,25 @@ function walk(dir) {
   return out;
 }
 
+function isBrowserOnly(abs) {
+  const fd = fs.openSync(abs, 'r');
+  const buf = Buffer.alloc(64);
+  const n = fs.readSync(fd, buf, 0, 64, 0);
+  fs.closeSync(fd);
+  const first = buf.subarray(0, n).toString('utf8').split(/\r?\n/, 1)[0];
+  return first === '// @browser-only';
+}
+
 test('pure modules import under Node', async () => {
-  const files = walk(path.join(root, 'src')).filter((abs) => path.basename(abs) !== 'app.js');
+  const files = walk(path.join(root, 'src')).filter((abs) => !isBrowserOnly(abs));
   assert.ok(files.length > 10);
   for (const abs of files) {
     const loaded = await import(pathToFileURL(abs).href);
     assert.equal(typeof loaded, 'object');
   }
+});
+
+test('app.js is marked browser-only', () => {
+  const app = path.join(root, 'src', 'app.js');
+  assert.equal(isBrowserOnly(app), true);
 });

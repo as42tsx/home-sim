@@ -1,7 +1,8 @@
 /**
- * Tiny locale loader. Does not fetch on import.
- * Message files live at the repo root (`i18n/zh.json`, `i18n/en.json`).
+ * zh is imported with this module so the publish bundle can inline it.
+ * en stays a separate fetch, resolved from the page URL (works for src/ and dist/).
  */
+import zhMessages from '../../i18n/zh.json' with { type: 'json' };
 
 const cache = new Map();
 
@@ -10,13 +11,18 @@ const cache = new Map();
  * @returns {Promise<Record<string, string>>}
  */
 export async function loadLocale(lang = 'zh') {
-  if (cache.has(lang)) return cache.get(lang);
-  const file = lang === 'en' ? 'en.json' : 'zh.json';
-  const url = new URL(`../../i18n/${file}`, import.meta.url);
+  const key = lang === 'en' ? 'en' : 'zh';
+  if (cache.has(key)) return cache.get(key);
+  if (key === 'zh') {
+    const data = { ...zhMessages };
+    cache.set('zh', data);
+    return data;
+  }
+  const url = new URL('i18n/en.json', document.baseURI);
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`无法读取文案 ${file}（${res.status}）`);
+  if (!res.ok) throw new Error(`无法读取文案 en.json（${res.status}）`);
   const data = await res.json();
-  cache.set(lang, data);
+  cache.set('en', data);
   return data;
 }
 

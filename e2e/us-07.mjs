@@ -1,8 +1,70 @@
-import { launch, newPage, openApp, chooseTemplate, getPlan, enter3d, shot, report, finish } from './lib.mjs';
+import { launch, newPage, openApp, chooseBlank, chooseTemplate, getPlan, enter3d, shot, report, finish } from './lib.mjs';
 
 const rep = report();
 const browser = await launch();
+
+async function check3dLoading(browser, rep) {
+  const { context, page } = await newPage(browser, { width: 1440, height: 900 });
+  try {
+    await openApp(page);
+    await chooseBlank(page);
+    await page.route(/view3d-boot/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.continue();
+    });
+    await page.locator('.topbar button[data-mode="view3d"]').click();
+    const indicator = page.locator('[data-testid="view3d-loading"]');
+    await indicator.waitFor({ state: 'visible', timeout: 5000 });
+    const text = (await indicator.innerText()).replace(/\s+/g, ' ').trim();
+    const modeBtn = page.locator('.topbar button[data-mode="view3d"]');
+    const actionBtn = page.locator('.topbar [data-action="view3d"]');
+    const modePressed = await modeBtn.getAttribute('aria-pressed');
+    const actionPressed = await actionBtn.getAttribute('aria-pressed');
+    const modeDisabled = await modeBtn.isDisabled();
+    const actionDisabled = await actionBtn.isDisabled();
+    const ok = text.includes('正在加载 3D') && modePressed === 'true' && actionPressed === 'true' && modeDisabled && actionDisabled;
+    rep.check('US-07 3D loading', ok, `text ${text} pressed ${modePressed}/${actionPressed} disabled ${modeDisabled}/${actionDisabled}`);
+    await page.waitForFunction(() => {
+      const node = document.querySelector('[data-testid="view3d-loading"]');
+      return document.body.dataset.mode === 'view3d' && node && node.hidden;
+    }, null, { timeout: 40000 });
+    rep.check('US-07 3D loading done', true, 'indicator hidden when 3D is ready');
+  } finally {
+    await context.close();
+  }
+}
+
+async function check3dRetry(browser, rep) {
+  const { context, page } = await newPage(browser, { width: 1440, height: 900 });
+  try {
+    await openApp(page);
+    await chooseBlank(page);
+    let aborted = false;
+    await page.route(/view3d-boot/, async (route) => {
+      if (!aborted) {
+        aborted = true;
+        await route.abort('failed');
+        return;
+      }
+      await route.continue();
+    });
+    await page.locator('.topbar button[data-mode="view3d"]').click();
+    const retry = page.locator('[data-action="view3d-retry"]');
+    await retry.waitFor({ state: 'visible', timeout: 15000 });
+    const text = (await page.locator('[data-testid="view3d-loading"]').innerText()).replace(/\s+/g, ' ').trim();
+    rep.check('US-07 3D fail', text.includes('3D 加载失败，点此重试'), text);
+    await retry.click();
+    await page.waitForFunction(() => document.body.dataset.mode === 'view3d' && !document.querySelector('.topbar [data-action="view3d"]')?.disabled, null, { timeout: 40000 });
+    const gone = await page.locator('[data-testid="view3d-loading"]').isHidden();
+    rep.check('US-07 3D retry', gone, '3D loaded after retry');
+  } finally {
+    await context.close();
+  }
+}
+
 try {
+  await check3dLoading(browser, rep);
+  await check3dRetry(browser, rep);
   const { page } = await newPage(browser, { width: 1440, height: 900 });
   await openApp(page);
   await chooseTemplate(page, 'apt-1br');

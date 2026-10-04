@@ -191,7 +191,7 @@ v1.3 的坐标是墙中线。`expected.rooms.areaM2` 仍是中线面积，推导
 
 ## 本地运行
 
-仓库是纯静态文件，没有构建步骤。
+开发和 `npm test` 直接跑 `src/` 里的 ES modules，不需要构建。发布页（GitHub Pages）会先 `npm run build`，站点根上的页面加载 `dist/` 里的包，而不是 `src/app.js`。
 
 ```bash
 cd /path/to/parent && python3 -m http.server 8000

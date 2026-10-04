@@ -8,6 +8,7 @@ const browser = await launch();
 try {
   const { page } = await newPage(browser);
   await openApp(page);
+  await page.waitForFunction(() => ['apt-1br', 'apt-2br', 'apt-3br'].every((id) => document.querySelector(`[data-testid="template-${id}"]`)));
   const picker = await page.locator('[data-testid="picker"]').isVisible();
   const ids = ['apt-1br', 'apt-2br', 'apt-3br'];
   const cards = [];

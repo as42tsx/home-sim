@@ -529,6 +529,68 @@ select:focus-visible {
   display: none !important;
 }
 
+.view3d-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: var(--z-float);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  pointer-events: none;
+  color: var(--ink-2);
+}
+
+.view3d-loading p,
+.view3d-loading button {
+  margin: 0;
+  font-size: var(--fs-12);
+  line-height: 1.2;
+  color: var(--ink-2);
+}
+
+.view3d-loading button {
+  pointer-events: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.view3d-spin {
+  display: block;
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+  animation: view3d-spin 0.8s linear infinite;
+}
+
+.view3d-spin circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 40 23;
+}
+
+@keyframes view3d-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view3d-spin { animation: none; }
+  .view3d-spin circle { stroke-dasharray: none; }
+}
+
+.seg button.is-on:disabled,
+.tabbar button.is-on:disabled,
+.btn[aria-pressed="true"]:disabled {
+  opacity: 1;
+}
+
 .floors {
   position: absolute;
   left: var(--sp-3);
@@ -621,17 +683,13 @@ select:focus-visible {
 }
 
 @media (min-width: 600px) {
-  body.is-picker {
-    grid-template-columns: var(--toolrail-w) minmax(0, 1fr);
-    grid-template-areas:
-      "topbar topbar"
-      "tools canvas"
-      "status status";
-  }
-
-  body.is-picker .sidepanel,
-  body.is-picker .inspector {
-    display: none;
+  /* Overlay the panels. The shell grid stays so plan-svg does not move. */
+  body.is-picker .picker {
+    position: fixed;
+    top: var(--topbar-h);
+    right: 0;
+    bottom: var(--statusbar-h);
+    left: var(--toolrail-w);
   }
 }
 
@@ -765,6 +823,23 @@ select:focus-visible {
   display: grid;
   place-items: center;
   margin-bottom: var(--sp-3);
+}
+
+.thumb-skel {
+  display: block;
+  width: 150px;
+  height: 110px;
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+}
+
+.card.is-loading:disabled,
+.card.is-error:disabled {
+  opacity: 1;
+}
+
+.card.is-loading:disabled {
+  cursor: progress;
 }
 
 .card strong {

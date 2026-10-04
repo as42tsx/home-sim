@@ -10,10 +10,12 @@
     "test": "node --test",
     "report": "node scripts/template-report.js",
     "cleanroom": "node scripts/cleanroom-check.js",
+    "build": "node scripts/build.mjs",
     "e2e": "node e2e/run.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+    "ajv-formats": "^3.0.1",
+    "esbuild": "^0.24.2"
   }
 }

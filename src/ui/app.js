@@ -300,6 +300,15 @@ function ensureChrome() {
     host.hidden = true;
     ui.canvas.append(host);
   }
+  ui.view3dLoading = ensureDiv('view3d-loading');
+  ui.view3dLoading.dataset.testid = 'view3d-loading';
+  ui.view3dLoading.hidden = true;
+  ui.view3dLoading.innerHTML = `
+    <svg class="view3d-spin" data-spin width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></circle>
+    </svg>
+    <p data-loading-text></p>
+    <button type="button" data-action="view3d-retry" hidden></button>`;
   ui.hud = ensureDiv('hud3d', 'data-hud');
   ui.hud.dataset.testid = 'hud3d';
   ui.hud.hidden = true;
@@ -416,20 +425,67 @@ function syncSheet() {
   if (props) props.hidden = state.sheetPage !== 'props';
 }
 
+function probeWebGL() {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    if (!gl) return { ok: false, reason: '' };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: '' };
+  }
+}
+
+function show3dStatus(mode) {
+  const node = ui.view3dLoading;
+  if (!node) return;
+  const spin = node.querySelector('[data-spin]');
+  const text = node.querySelector('[data-loading-text]');
+  const retry = node.querySelector('[data-action="view3d-retry"]');
+  if (mode === 'hide') {
+    node.hidden = true;
+    node.classList.remove('is-error');
+    return;
+  }
+  const failed = mode === 'error';
+  node.hidden = false;
+  node.classList.toggle('is-error', failed);
+  if (spin) spin.hidden = failed;
+  if (text) {
+    text.hidden = failed;
+    text.textContent = t('view3d.loading');
+  }
+  if (retry) {
+    retry.hidden = !failed;
+    retry.textContent = t('view3d.failed');
+  }
+}
+
 function paint3dButton() {
   const loading = !!state.view3dBusy;
   const blocked = !!(state.webgl && state.webgl.ok === false);
   const in3d = state.mode === 'view3d';
-  const label = loading ? t('view3d.loading') : in3d ? t('action.to2d') : t('action.view3d');
+  const label = in3d ? t('action.to2d') : t('action.view3d');
   for (const button of document.querySelectorAll('[data-action="view3d"]')) {
     const span = button.querySelector('[data-i18n]');
     if (span) span.textContent = label;
     button.disabled = loading || (blocked && !in3d);
+    button.setAttribute('aria-pressed', (loading || in3d) ? 'true' : 'false');
     if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
   }
   for (const button of document.querySelectorAll('button[data-mode="view3d"]')) {
-    button.disabled = blocked;
+    button.disabled = loading || blocked;
+    button.setAttribute('aria-pressed', (loading || in3d) ? 'true' : 'false');
+    button.classList.toggle('is-on', loading || in3d);
     if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
+  }
+  if (loading) {
+    for (const button of document.querySelectorAll('button[data-mode]')) {
+      if (button.dataset.mode !== 'view3d') button.classList.remove('is-on');
+    }
+  }
+  if (ui.view3dLoading && !ui.view3dLoading.hidden) {
+    show3dStatus(ui.view3dLoading.classList.contains('is-error') ? 'error' : 'loading');
   }
 }
 
@@ -876,6 +932,7 @@ function bindEvents() {
 }
 
 async function boot() {
+  state.webgl = probeWebGL();
   state.prefs = readPrefs(storage);
   try {
     state.messages = await loadLocale(state.prefs.lang);
@@ -897,20 +954,19 @@ async function boot() {
   } else {
     openLocalOrPicker();
   }
-  await refreshPicker();
-  await probe3d();
-  await new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      if (!state.pickerOpen) fitCamera();
-      resolve();
-    });
-  });
+  if (state.pickerOpen) renderPicker();
   document.documentElement.dataset.app = 'ready';
+  const fitLater = !state.pickerOpen;
+  void refreshPicker();
+  requestAnimationFrame(() => {
+    if (fitLater && !state.pickerOpen) fitCamera();
+  });
 }
 
 function adopt(plan, opts = {}) {
   state.readOnly = opts.readOnly === true;
   state.walkPick = false;
+  if (!state.view3dBusy) show3dStatus('hide');
   state.pickerOpen = false;
   syncPicker();
   state.chain = null;
@@ -3299,8 +3355,8 @@ function onAction(action, node, event) {
   else if (action === 'export-json') exportJSON();
   else if (action === 'import-json') ui.file.click();
   else if (action === 'lang') void toggleLang();
-  else if (action === 'view3d') {
-    if (state.mode === 'view3d') setMode('plan');
+  else if (action === 'view3d' || action === 'view3d-retry') {
+    if (action === 'view3d' && state.mode === 'view3d') setMode('plan');
     else void enter3d(false);
   } else if (action === 'bird') {
     state.walkPick = false;
@@ -3466,50 +3522,101 @@ async function showPicker() {
   if (state.store && state.armed) saveNow();
   state.pickerOpen = true;
   syncPicker();
+  renderPicker();
   await refreshPicker();
 }
 
-async function refreshPicker() {
-  let index = { templates: [] };
+function siteUrl(rel) {
+  return new URL(rel, document.baseURI);
+}
+
+let templateTask = null;
+
+function refreshPicker() {
+  if (state.pickerOpen) renderPicker();
+  if (!templateTask) templateTask = loadTemplateCards();
+  return templateTask;
+}
+
+async function loadTemplateCards() {
+  let index = null;
   try {
-    const res = await fetch(new URL('../../templates/index.json', import.meta.url));
+    const res = await fetch(siteUrl('templates/index.json'));
     if (res.ok) index = await res.json();
   } catch { /* blank card still works */ }
-  const cards = [];
-  for (const item of index.templates || []) {
-    try {
-      const res = await fetch(new URL(`../../templates/${item.file}`, import.meta.url));
-      const doc = await res.json();
-      cards.push({
-        id: item.id,
-        name: item.name,
-        net: aboutNetM2(planNetM2(doc.plan), item.netAreaM2),
-        model: roomThumbModel(doc.plan),
-        plan: doc.plan,
-      });
-    } catch {
-      cards.push({
-        id: item.id,
-        name: item.name,
-        net: aboutNetM2(null, item.netAreaM2),
-        model: null,
-        plan: null,
-      });
-    }
+  if (!index || !Array.isArray(index.templates)) {
+    templateTask = null;
+    return;
   }
-  state.templates = cards;
-  renderPicker();
+  const items = index.templates;
+  state.templates = items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    net: null,
+    model: null,
+    plan: null,
+    status: 'loading',
+  }));
+  if (state.pickerOpen) renderPicker();
+  await Promise.all(items.map((item, index) => loadTemplateFile(item, index)));
+}
+
+async function loadTemplateFile(item, index) {
+  try {
+    const res = await fetch(siteUrl(`templates/${item.file}`));
+    if (!res.ok) throw new Error(String(res.status));
+    const doc = await res.json();
+    if (!doc?.plan) throw new Error('missing plan');
+    state.templates[index] = {
+      id: item.id,
+      name: item.name,
+      net: aboutNetM2(planNetM2(doc.plan), item.netAreaM2),
+      model: roomThumbModel(doc.plan),
+      plan: doc.plan,
+      status: 'ready',
+    };
+  } catch {
+    state.templates[index] = {
+      id: item.id,
+      name: item.name,
+      net: null,
+      model: null,
+      plan: null,
+      status: 'error',
+    };
+  }
+  if (state.pickerOpen) renderPicker();
+}
+
+function templateCard(card) {
+  const id = escapeHtml(card.id);
+  if (card.status === 'loading') {
+    return `<button type="button" class="card is-loading" data-template="${id}" data-testid="template-${id}" disabled>
+      <div class="thumb"><span class="thumb-skel" aria-hidden="true"></span></div>
+      <strong>${escapeHtml(card.name || '')}</strong>
+      <span>${escapeHtml(t('picker.loading'))}</span>
+    </button>`;
+  }
+  if (card.status === 'error' || !card.plan) {
+    return `<button type="button" class="card is-error" data-template="${id}" data-testid="template-${id}" disabled>
+      <div class="thumb"></div>
+      <strong>${escapeHtml(card.name || '')}</strong>
+      <span>${escapeHtml(t('picker.error'))}</span>
+    </button>`;
+  }
+  const area = card.net == null ? '' : t('picker.area', { area: card.net });
+  return `<button type="button" class="card" data-template="${id}" data-testid="template-${id}">
+    <div class="thumb">${thumbMarkup(card.model)}</div>
+    <strong>${escapeHtml(card.name)}</strong>
+    <span>${escapeHtml(area)}</span>
+  </button>`;
 }
 
 function renderPicker() {
-  const cards = state.templates.map((card) => {
-    const area = card.net == null ? '' : t('picker.area', { area: card.net });
-    return `<button type="button" class="card" data-template="${escapeHtml(card.id)}" data-testid="template-${escapeHtml(card.id)}">
-      <div class="thumb">${thumbMarkup(card.model)}</div>
-      <strong>${escapeHtml(card.name)}</strong>
-      <span>${escapeHtml(area)}</span>
-    </button>`;
-  }).join('');
+  const previous = ui.picker?.querySelector('[data-plan-input]');
+  const typed = previous?.value ?? '';
+  const focused = !!(previous && document.activeElement === previous);
+  const cards = state.templates.map((card) => templateCard(card)).join('');
   const last = readLastId(storage);
   const recentOk = !!(last && readPlan(storage, last));
   ui.picker.innerHTML = `
@@ -3532,6 +3639,9 @@ function renderPicker() {
       <button type="button" class="btn" data-action="import-json">${escapeHtml(t('picker.import'))}</button>
       <button type="button" class="btn" data-action="open-recent" ${recentOk ? '' : 'disabled'}>${escapeHtml(t('picker.recent'))}</button>
     </div>`;
+  const input = ui.picker.querySelector('[data-plan-input]');
+  if (input && typed) input.value = typed;
+  if (focused && input) input.focus();
 }
 
 function thumbMarkup(model) {
@@ -3761,15 +3871,40 @@ async function toggleLang() {
   if (!ui.picker.hidden) renderPicker();
 }
 
-async function probe3d() {
+/** Chrome keeps a rejected dynamic import in the module map, so a retry must use a new URL. */
+let view3dRetryUrl = '';
+
+function view3dRetryFrom(err) {
+  const msg = String(err?.message || err || '');
+  const match = msg.match(/https?:\/\/\S+/);
+  if (!match) return '';
   try {
-    const mod = await import('../view3d/index.js');
-    state.view3dMod = mod;
-    if (typeof mod.isWebGLAvailable === 'function') state.webgl = mod.isWebGLAvailable();
+    const url = new URL(match[0].replace(/[)\].,;]+$/, ''));
+    if (!url.pathname.includes('view3d-boot')) return '';
+    url.searchParams.set('retry', String(Date.now()));
+    return url.href;
   } catch {
-    state.view3dMod = null;
+    return '';
   }
-  paint3dButton();
+}
+
+async function importView3d() {
+  if (view3dRetryUrl) {
+    const url = view3dRetryUrl;
+    view3dRetryUrl = '';
+    try {
+      return await import(url);
+    } catch (err) {
+      view3dRetryUrl = view3dRetryFrom(err) || view3dRetryFrom(url);
+      throw err;
+    }
+  }
+  try {
+    return await import('../view3d-boot.js');
+  } catch (err) {
+    view3dRetryUrl = view3dRetryFrom(err);
+    throw err;
+  }
 }
 
 async function enter3d(fromKey) {
@@ -3781,29 +3916,34 @@ async function enter3d(fromKey) {
     renderChrome();
     return;
   }
+  if (!state.webgl) state.webgl = probeWebGL();
   if (state.webgl && state.webgl.ok === false) {
     toast(state.webgl.reason || t('view3d.unavailable'));
     return;
   }
   const gen = ++enterGen;
   state.view3dBusy = true;
+  show3dStatus('loading');
   paint3dButton();
   const reduced = prefersReduced();
   const host = document.getElementById('view3d-host');
+  let failed = false;
   try {
     let mod = state.view3dMod;
     if (!mod) {
-      mod = await import('../view3d/index.js');
+      mod = await importView3d();
+      if (gen !== enterGen) return;
       state.view3dMod = mod;
     }
     if (gen !== enterGen) return;
     if (!mod || typeof mod.createView3D !== 'function') {
-      toast(t('toast.view3dPending'));
+      failed = true;
       return;
     }
     if (typeof mod.isWebGLAvailable === 'function') state.webgl = mod.isWebGLAvailable();
     if (state.webgl && state.webgl.ok === false) {
       toast(state.webgl.reason || t('view3d.unavailable'));
+      show3dStatus('hide');
       return;
     }
     if (!state.view3d) {
@@ -3816,6 +3956,7 @@ async function enter3d(fromKey) {
       });
     }
     if (gen !== enterGen) return;
+    show3dStatus('hide');
     state.mode = 'view3d';
     state.walkPick = false;
     if (host) host.hidden = false;
@@ -3829,14 +3970,18 @@ async function enter3d(fromKey) {
     renderChrome();
   } catch {
     if (gen === enterGen) {
+      failed = true;
       if (host) host.hidden = true;
-      svg.hidden = false;
+      if (svg) svg.hidden = false;
       if (state.mode === 'view3d') state.mode = 'plan';
-      toast(t('toast.view3dPending'));
       renderChrome();
     }
   } finally {
     if (gen === enterGen) {
+      if (failed) {
+        state.view3dMod = null;
+        show3dStatus('error');
+      }
       state.view3dBusy = false;
       paint3dButton();
     }
@@ -3846,6 +3991,7 @@ async function enter3d(fromKey) {
 async function leave3d() {
   const gen = ++enterGen;
   state.view3dBusy = false;
+  show3dStatus('hide');
   paint3dButton();
   const reduced = prefersReduced();
   try {

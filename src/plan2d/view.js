@@ -51,15 +51,6 @@ function dropMissing(parent, keep) {
   }
 }
 
-function labelNeedsNameOnly(label, k) {
-  const width = (label.maxX - label.minX) * k;
-  const height = (label.maxY - label.minY) * k;
-  if (width < 60 || height < 40) return true;
-  let textW = 0;
-  for (const ch of label.area || '') textW += ch.charCodeAt(0) > 255 ? 12 : 7.2;
-  return width < textW + 8;
-}
-
 function screenOf(camera, point) {
   return {
     x: camera.x + point.x * camera.k,
@@ -543,9 +534,8 @@ function paintScreen(group, model) {
     name.setAttribute('y', at.y);
     name.textContent = label.name;
     area.setAttribute('x', at.x);
-    area.setAttribute('y', at.y + 16);
-    const k = camera?.k || 0;
-    const compact = !!label.nameOnly || (label.maxX != null && labelNeedsNameOnly(label, k));
+    area.setAttribute('y', at.y + (label.lineDy > 0 ? label.lineDy : 16));
+    const compact = !!label.nameOnly;
     area.textContent = compact ? '' : label.area;
     area.setAttribute('visibility', compact ? 'hidden' : 'visible');
   }

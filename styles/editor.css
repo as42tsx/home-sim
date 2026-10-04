@@ -1283,6 +1283,11 @@ body[data-mode="view3d"] [data-zoom] {
   fill: var(--ink-2);
 }
 
+@media (max-width: 599px) {
+  .label-name { font-size: var(--fs-12); }
+  .label-area { font-size: var(--fs-10); }
+}
+
 .dim-num {
   font-family: var(--font-num);
   font-size: var(--fs-11);

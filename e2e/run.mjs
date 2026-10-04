@@ -20,6 +20,7 @@ const scripts = [
   'us-11.mjs',
   'us-15.mjs',
   'us-21.mjs',
+  'labels.mjs',
   'perf.mjs',
 ];
 

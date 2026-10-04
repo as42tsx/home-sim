@@ -53,7 +53,7 @@ import { uniqueId } from '../model/ids.js';
 import { validatePlan } from '../model/validate.js';
 import { checkOpeningPlacement, openingClearance } from '../openings/clearance.js';
 import { legendForType } from '../plan2d/furniture-symbols.js';
-import { placeRoomLabel, swingSectorBBox } from '../plan2d/label-place.js';
+import { placeRoomLabel } from '../plan2d/label-place.js';
 import { dimensionBandPx, mountPlanView } from '../plan2d/view.js';
 import { renderPlanPng } from './png-2d.js';
 import { deriveRooms } from '../rooms/index.js';
@@ -160,6 +160,9 @@ const state = {
   webgl: null,
   camToken: 0,
   refit: false,
+  phoneFit: null,
+  phoneOuterW: 0,
+  phoneAvailPx: 0,
   readOnly: false,
   walkPick: false,
   cutaway: false,
@@ -812,6 +815,11 @@ function bindDebug() {
   debugRef.fit = () => {
     state.camToken += 1;
     fitCamera();
+  };
+  debugRef.phoneFitInfo = () => {
+    if (!(state.phoneOuterW > 0) || !(state.phoneAvailPx > 0)) return null;
+    const planPx = state.phoneOuterW * state.camera.k;
+    return { ratio: planPx / state.phoneAvailPx, planPx, availPx: state.phoneAvailPx };
   };
   debugRef.view3d = () => state.view3d || null;
   debugRef.store = null;
@@ -1689,33 +1697,136 @@ function textPx(text, size) {
   return width;
 }
 
-function layoutLabels(labels, rooms, openings, k) {
-  return (labels || []).map((label) => {
-    const room = (rooms || []).find((item) => item.id === label.id);
-    if (!room?.points || room.points.length < 3) return label;
-    const swings = [];
-    for (const item of openings || []) {
-      const opening = item.opening;
-      if (!opening || item.preview || opening.kind === 'window' || opening.kind === 'slide') continue;
-      const geom = openingGeometry(item.a, item.b, opening);
-      const mid = {
-        x: geom.hinge.x + geom.normal.x * (opening.width || 0) * 0.55,
-        y: geom.hinge.y + geom.normal.y * (opening.width || 0) * 0.55,
-      };
-      if (!pointInPolygon(mid, room.points)) continue;
-      swings.push(swingSectorBBox(geom.hinge, geom.jamb, geom.leaf));
+const textMeasure = new Map();
+let labelCache = { key: '', k: 0, labels: null };
+
+function labelTypePx(className) {
+  const phone = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 599px)').matches;
+  if (className === 'label-area') return phone ? 10 : 12;
+  return phone ? 12 : 13;
+}
+
+function measureSvgText(className, text) {
+  const size = labelTypePx(className);
+  const key = `${className}\n${size}\n${text || ''}`;
+  const cached = textMeasure.get(key);
+  if (cached) return cached;
+  const basis = className === 'label-area' ? 12 : 13;
+  const scale = size / basis;
+  const fallback = {
+    w: textPx(text, size),
+    ascent: (className === 'label-area' ? 12 : 15) * scale,
+    descent: (className === 'label-area' ? 3 : 4) * scale,
+  };
+  let metrics = fallback;
+  try {
+    if (svg) {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      node.setAttribute('class', className);
+      node.setAttribute('x', '0');
+      node.setAttribute('y', '0');
+      node.textContent = text || '';
+      svg.appendChild(node);
+      const box = node.getBBox();
+      node.remove();
+      if ((text || '') && box.width > 0) {
+        metrics = {
+          w: box.width,
+          ascent: Math.max(0, -box.y),
+          descent: Math.max(0, box.y + box.height),
+        };
+      }
     }
-    const placed = placeRoomLabel({
+  } catch {
+    metrics = fallback;
+  }
+  textMeasure.set(key, metrics);
+  return metrics;
+}
+
+function layoutLabels(labels, rooms, openings, k) {
+  const scale = k > 0 ? k : 0.05;
+  const measured = (labels || []).map((label) => {
+    const nameM = measureSvgText('label-name', label.name);
+    const areaM = measureSvgText('label-area', label.area);
+    const lineDy = Math.max(1, Math.round((nameM.descent + areaM.ascent) * 10) / 10);
+    return { label, nameM, areaM, lineDy };
+  });
+  const key = labelStructureKey(measured, rooms, openings);
+  if (labelCache.labels && labelCache.key === key && labelCache.k > 0) {
+    const drift = Math.abs(scale - labelCache.k) / labelCache.k;
+    if (drift <= 0.05) return labelCache.labels;
+  }
+  const placed = measured.map(({ label, nameM, areaM, lineDy }) => {
+    const room = (rooms || []).find((item) => item.id === label.id);
+    if (!room?.points || room.points.length < 3) return { ...label, lineDy };
+    const swings = swingsInto(room.points, openings);
+    const pad = 1;
+    const result = placeRoomLabel({
       polygon: room.points,
       at: { x: label.x, y: label.y },
       swings,
-      boxW: Math.max(textPx(label.name, 13), textPx(label.area, 12)) + 6,
-      boxH: 32,
-      nameH: 16,
-      k: k || 0.05,
+      boxW: Math.max(nameM.w, areaM.w) + pad,
+      nameW: nameM.w + pad,
+      nameAscent: nameM.ascent + 0.5,
+      nameDescent: nameM.descent + 0.5,
+      areaGap: lineDy,
+      areaDescent: areaM.descent + 0.5,
+      k: scale,
     });
-    return { ...label, x: placed.x, y: placed.y, nameOnly: placed.nameOnly };
+    return {
+      ...label,
+      x: result.x,
+      y: result.y,
+      nameOnly: result.nameOnly,
+      lineDy: result.lineDy,
+    };
   });
+  labelCache = { key, k: scale, labels: placed };
+  return placed;
+}
+
+function labelStructureKey(measured, rooms, openings) {
+  const parts = [];
+  for (const row of measured) {
+    const room = (rooms || []).find((item) => item.id === row.label.id);
+    parts.push(
+      row.label.id,
+      row.label.name,
+      row.label.area,
+      row.nameM.w.toFixed(1),
+      row.areaM.w.toFixed(1),
+      row.lineDy.toFixed(1),
+    );
+    if (room?.points) {
+      for (const point of room.points) parts.push(point.x.toFixed(0), point.y.toFixed(0));
+    }
+  }
+  for (const item of openings || []) {
+    const opening = item.opening;
+    if (!opening || item.preview || opening.kind === 'window' || opening.kind === 'slide') continue;
+    parts.push(
+      opening.kind, opening.t, opening.width, opening.hinge, opening.swing,
+      item.a?.x, item.a?.y, item.b?.x, item.b?.y,
+    );
+  }
+  return parts.join('|');
+}
+
+function swingsInto(points, openings) {
+  const swings = [];
+  for (const item of openings || []) {
+    const opening = item.opening;
+    if (!opening || item.preview || opening.kind === 'window' || opening.kind === 'slide') continue;
+    const geom = openingGeometry(item.a, item.b, opening);
+    const mid = {
+      x: geom.hinge.x + geom.normal.x * (opening.width || 0) * 0.55,
+      y: geom.hinge.y + geom.normal.y * (opening.width || 0) * 0.55,
+    };
+    if (!pointInPolygon(mid, points)) continue;
+    swings.push({ hinge: geom.hinge, jamb: geom.jamb, leaf: geom.leaf });
+  }
+  return swings;
 }
 
 function furnLabel(item) {
@@ -1838,32 +1949,69 @@ function cursorFor() {
   return 'default';
 }
 
-function phoneFitFrame(size) {
-  if (layoutName() !== 'phone' || !svg) return null;
-  const rect = svg.getBoundingClientRect();
-  let left = 16;
+/** Outer-face bbox of exterior walls, millimetres. */
+function planOuterMm(floor) {
+  if (!floor) return null;
+  const nodes = new Map((floor.nodes || []).map((node) => [node.id, node]));
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let found = false;
+  for (const wall of floor.walls || []) {
+    if (!wall || wall.virtual || wall.demolished || !wall.exterior) continue;
+    const a = nodes.get(wall.a);
+    const b = nodes.get(wall.b);
+    if (!a || !b) continue;
+    found = true;
+    for (const point of wallQuad(a, b, wall.thickness || 240, false)) {
+      if (point.x < minX) minX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y > maxY) maxY = point.y;
+    }
+  }
+  if (!found) return null;
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+}
+
+function entrySideOf(floor) {
+  const mark = entryMarker(floor);
+  if (!mark?.outward) return '';
+  const outward = mark.outward;
+  if (Math.abs(outward.x) >= Math.abs(outward.y)) return outward.x >= 0 ? 'right' : 'left';
+  return outward.y >= 0 ? 'bottom' : 'top';
+}
+
+/** Tool strip and collapsed sheet, in SVG pixels. */
+function phoneChrome(size) {
+  const svgRect = svg.getBoundingClientRect();
+  let strip = null;
   const rail = ui.tools;
   if (rail) {
     const style = getComputedStyle(rail);
     const shown = style.display !== 'none' && style.visibility !== 'hidden' && !rail.hidden;
     if (shown) {
       const box = rail.getBoundingClientRect();
-      if (box.width > 8 && box.right > rect.left) left = Math.max(16, box.right - rect.left + 16);
+      if (box.width > 8 && box.height > 8) {
+        strip = {
+          left: box.left - svgRect.left,
+          top: box.top - svgRect.top,
+          right: box.right - svgRect.left,
+          bottom: box.bottom - svgRect.top,
+          viewRight: box.right,
+        };
+      }
     }
   }
-  let sheetH = 0;
+  let sheetTop = size.h;
   const sheet = ui.sheet;
   if (sheet && getComputedStyle(sheet).display !== 'none') {
-    const handle = sheet.querySelector('.sheet-handle')?.getBoundingClientRect().height || 0;
-    const tabs = sheet.querySelector('.sheet-tabs')?.getBoundingClientRect().height || 0;
-    sheetH = handle + tabs;
+    const box = sheet.getBoundingClientRect();
+    if (box.height > 4) sheetTop = box.top - svgRect.top;
   }
-  const top = 16;
-  // 16 px keeps the tool strip off the walls. The extra right inset leaves
-  // the entry label (about 28 px outside the outer face) on screen.
-  const right = Math.max(left + 48, size.w - 48);
-  const bottom = Math.max(top + 48, size.h - sheetH - 8);
-  return { left, top, right, bottom };
+  const availPx = Math.max(1, window.innerWidth - (strip ? strip.viewRight : 0));
+  return { strip, sheetTop, availPx };
 }
 
 function fitCamera() {
@@ -1882,57 +2030,124 @@ function fitCamera() {
       pts.push({ x: item.cx + item.w / 2, y: item.cy + item.d / 2 });
     }
   }
-  const frame = phoneFitFrame(size);
-  if (!pts.length) {
-    state.camera.k = 0.05;
-    if (frame) {
-      state.camera.x = (frame.left + frame.right) / 2;
-      state.camera.y = (frame.top + frame.bottom) / 2;
-    } else {
-      state.camera.x = size.w / 2;
-      state.camera.y = size.h / 2;
-    }
-  } else {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const point of pts) {
-      minX = Math.min(minX, point.x);
-      minY = Math.min(minY, point.y);
-      maxX = Math.max(maxX, point.x);
-      maxY = Math.max(maxY, point.y);
-    }
-    if (frame) {
-      const spanW = Math.max(1, maxX - minX);
-      const spanH = Math.max(1, maxY - minY);
-      const band = dimensionBandPx();
-      const faceMm = 120;
-      const measure = (extra) => {
-        const availW = Math.max(48, frame.right - frame.left - extra);
-        const availH = Math.max(48, frame.bottom - frame.top - extra);
-        return {
-          extra,
-          availW,
-          availH,
-          k: Math.min(availW / spanW, availH / spanH),
-        };
-      };
-      let fit = measure(band);
-      fit = measure(band + faceMm * fit.k);
-      state.camera.k = Math.max(0.002, Math.min(2, fit.k));
-      state.camera.x = frame.left + fit.extra + (fit.availW - (minX + maxX) * state.camera.k) / 2;
-      state.camera.y = frame.top + fit.extra + (fit.availH - (minY + maxY) * state.camera.k) / 2;
-    } else {
-      const pad = 80;
-      const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
-      state.camera.k = Math.max(0.002, Math.min(2, k));
-      state.camera.x = (size.w - (minX + maxX) * state.camera.k) / 2;
-      state.camera.y = (size.h - (minY + maxY) * state.camera.k) / 2;
-    }
-  }
+  if (layoutName() === 'phone' && svg) fitCameraPhone(size, floor, pts);
+  else fitCameraDesk(size, pts);
   renderCanvas();
   renderStatus();
+}
+
+function fitCameraDesk(size, pts) {
+  state.phoneOuterW = 0;
+  state.phoneAvailPx = 0;
+  state.phoneFit = null;
+  if (!pts.length) {
+    state.camera.k = 0.05;
+    state.camera.x = size.w / 2;
+    state.camera.y = size.h / 2;
+    return;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of pts) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  const pad = 80;
+  const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
+  state.camera.k = Math.max(0.002, Math.min(2, k));
+  state.camera.x = (size.w - (minX + maxX) * state.camera.k) / 2;
+  state.camera.y = (size.h - (minY + maxY) * state.camera.k) / 2;
+}
+
+/**
+ * Phone fit treats the tool strip as a rectangle. "Under" puts the plan
+ * below the strip so the left dimension column can sit in that x-range.
+ * "Beside" keeps the column to the right of the strip. The larger scale wins.
+ * Ratio planOuterWidth / (viewportW − stripRight) is capped at 0.835.
+ */
+function fitCameraPhone(size, floor, pts) {
+  const chrome = phoneChrome(size);
+  state.phoneAvailPx = chrome.availPx;
+  const outer = planOuterMm(floor) || paddedNodeBox(pts);
+  if (!outer || !(outer.w > 1) || !(outer.h > 1)) {
+    state.phoneOuterW = 0;
+    state.phoneFit = null;
+    state.camera.k = 0.05;
+    state.camera.x = size.w / 2;
+    state.camera.y = size.h / 2;
+    return;
+  }
+  const side = entrySideOf(floor);
+  const band = dimensionBandPx();
+  const entryOut = 40;
+  const edge = 2;
+  const above = Math.max(band, side === 'top' ? entryOut : 0);
+  const leftOf = Math.max(band, side === 'left' ? entryOut : 0);
+  const rightOf = side === 'right' ? entryOut : 8;
+  const below = side === 'bottom' ? entryOut : 6;
+  const strip = chrome.strip;
+  const under = fitFrame(outer, {
+    left: leftOf + edge,
+    right: size.w - rightOf - edge,
+    top: (strip ? strip.bottom + edge : 0) + above + edge,
+    bottom: chrome.sheetTop - below - edge,
+  });
+  const beside = strip ? fitFrame(outer, {
+    left: strip.right + edge + leftOf,
+    right: size.w - rightOf - edge,
+    top: above + edge,
+    bottom: chrome.sheetTop - below - edge,
+  }) : null;
+  let mode = under;
+  if (beside && beside.k > mode.k) mode = beside;
+  const capK = (0.835 * chrome.availPx) / outer.w;
+  let k = Math.min(mode.k > 0 ? mode.k : capK, capK);
+  k = Math.max(0.002, Math.min(2, k));
+  const planW = outer.w * k;
+  const planH = outer.h * k;
+  let outerLeft = mode.left + Math.max(0, (mode.right - mode.left - planW) / 2);
+  let outerTop = mode.top + Math.max(0, (mode.bottom - mode.top - planH) / 2);
+  if (outerLeft + planW > mode.right) outerLeft = mode.right - planW;
+  if (outerTop + planH > mode.bottom) outerTop = mode.bottom - planH;
+  state.camera.k = k;
+  state.camera.x = outerLeft - outer.minX * k;
+  state.camera.y = outerTop - outer.minY * k;
+  state.phoneOuterW = outer.w;
+  const planPx = outer.w * k;
+  state.phoneFit = { ratio: planPx / chrome.availPx, planPx, availPx: chrome.availPx };
+}
+
+function fitFrame(outer, box) {
+  const availW = box.right - box.left;
+  const availH = box.bottom - box.top;
+  const k = availW > 16 && availH > 16 ? Math.min(availW / outer.w, availH / outer.h) : 0;
+  return { ...box, k };
+}
+
+function paddedNodeBox(pts) {
+  if (!pts.length) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of pts) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  return {
+    minX: minX - 120,
+    minY: minY - 120,
+    maxX: maxX + 120,
+    maxY: maxY + 120,
+    w: maxX - minX + 240,
+    h: maxY - minY + 240,
+  };
 }
 
 function setTool(tool, silent) {

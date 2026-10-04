@@ -179,12 +179,16 @@ function drawOpenings(ctx, openings, colors, pxPerMm) {
       strokeParallel(ctx, geom, item.opening.width, thick * 0.18);
       strokeParallel(ctx, geom, item.opening.width, thick * -0.18);
     } else {
+      const placed = !item.preview;
+      ctx.lineWidth = (placed ? 2 : 1.5) / pxPerMm;
+      ctx.setLineDash([]);
       ctx.beginPath();
       ctx.moveTo(geom.hinge.x, geom.hinge.y);
       ctx.lineTo(geom.leaf.x, geom.leaf.y);
       ctx.stroke();
-      ctx.strokeStyle = colors.ink3;
-      ctx.setLineDash([5 / pxPerMm, 4 / pxPerMm]);
+      ctx.strokeStyle = placed ? colors.ink2 : colors.ink3;
+      ctx.lineWidth = (placed ? 1.2 : 1.25) / pxPerMm;
+      ctx.setLineDash(placed ? [] : [5 / pxPerMm, 4 / pxPerMm]);
       const start = Math.atan2(geom.jamb.y - geom.hinge.y, geom.jamb.x - geom.hinge.x);
       const end = Math.atan2(geom.leaf.y - geom.hinge.y, geom.leaf.x - geom.hinge.x);
       const cross = (geom.jamb.x - geom.hinge.x) * (geom.leaf.y - geom.hinge.y)

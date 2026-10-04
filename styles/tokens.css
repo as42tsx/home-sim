@@ -47,10 +47,13 @@
   --sky-day-top:#f3eee6; --sky-day-bottom:#e4dccd;  /* 白天：暖纸色渐变，不用蓝天 */
   --sky-night-top:#121724; --sky-night-bottom:#232033;
   --ground-3d:#ddd4c4;
+  --wall-3d-face:#e9e2d6;        /* 3D 墙身乳胶漆，受光面 */
+  --wall-3d-face-shade:#cfc6b8;  /* 3D 墙身乳胶漆，背光面 */
 
   /* ── 字体与字号 ── */
   --font-ui:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
   --font-num:ui-monospace,"SF Mono","Menlo","Consolas",monospace; /* 尺寸、面积、坐标 */
+  --fs-10:10px;  /* 入户标记 */
   --fs-11:11px;  /* 2D 尺寸标注最小字号（缩放后不小于此） */
   --fs-12:12px;  /* 状态栏、辅助说明 */
   --fs-13:13px;  /* 面板正文、表单标签 */

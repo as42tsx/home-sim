@@ -69,6 +69,19 @@ const CLIP_DISCARD = `
 }
 `;
 
+/* Cutaway clips the real top face, so the visible section is the side faces
+   just under the clip. Swap those fragments to the dark cap colour. */
+const WALL_SECTION = `
+diffuseColor.rgb *= uWallLift;
+if (uHeightCap < 40.0) {
+  float denomC = max(vRise, 0.0001);
+  float uC = clamp((uTime - vStart) / denomC, 0.0, 1.0);
+  float easedC = 1.0 - pow(1.0 - uC, 3.0);
+  float risenC = min(vFullH * easedC, uHeightCap);
+  if (vLocalY > risenC - 0.08) diffuseColor.rgb = vCap;
+}
+`;
+
 /**
  * @param {object} THREE
  * @param {{OrbitControls: Function, mergeGeometries: Function}} addons
@@ -106,7 +119,8 @@ export function mountView(THREE, addons, options) {
   container.appendChild(canvas);
 
   const scene = new THREE.Scene();
-  scene.background = readColor(THREE, '--sky-day-bottom');
+  scene.background = skyBackdrop(THREE);
+  scene.fog = new THREE.Fog(readColor(THREE, '--sky-day-bottom'), 100, 1500);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 2000);
   const building = new THREE.Group();
@@ -144,7 +158,19 @@ export function mountView(THREE, addons, options) {
     depthPacking: THREE.RGBADepthPacking,
     side: THREE.DoubleSide,
   });
-  patchClip(wallMat, uTime, uHeightCap);
+  const paintFace = readColor(THREE, '--wall-3d-face');
+  const paintShade = readColor(THREE, '--wall-3d-face-shade');
+  const uWallLift = { value: 1 };
+  const wallFactor = (ndot, up) => lambertFactor(ambient, hemi, sun, ndot, up);
+  {
+    const dark = wallFactor(0, 0);
+    let lift = 1;
+    for (const color of [paintFace, paintShade]) {
+      lift = Math.max(lift, color.r / dark[0], color.g / dark[1], color.b / dark[2]);
+    }
+    uWallLift.value = lift * 1.02;
+  }
+  patchWallPaint(wallMat, uTime, uHeightCap, uWallLift);
   patchClip(doorMat, uTime, uHeightCap);
   patchClip(glassMat, uTime, uHeightCap);
   patchClip(depthMat, uTime, uHeightCap);
@@ -773,9 +799,8 @@ export function mountView(THREE, addons, options) {
       const bounds = planBoundsMm(getPlan());
       const cx = (bounds.minX + bounds.maxX) / 2 / 1000;
       const cz = (bounds.minY + bounds.maxY) / 2 / 1000;
-      const w = Math.max(1, (bounds.maxX - bounds.minX) / 1000) * 2.4;
-      const d = Math.max(1, (bounds.maxY - bounds.minY) / 1000) * 2.4;
-      const geo = new THREE.PlaneGeometry(w, d);
+      const reach = (camera.far || 2000) + (controls.maxDistance || 400);
+      const geo = new THREE.PlaneGeometry(reach * 2, reach * 2);
       geo.rotateX(-Math.PI / 2);
       geo.translate(cx, -0.02, cz);
       const mesh = new THREE.Mesh(geo, groundMat);
@@ -836,6 +861,14 @@ export function mountView(THREE, addons, options) {
 
   function fillWalls(rec) {
     const geos = [];
+    const bake = {
+      face: paintFace,
+      shade: paintShade,
+      sun: sunDir(),
+      lift: uWallLift.value,
+      factor: wallFactor,
+      section: wallFactor(0, 0),
+    };
     for (const piece of rec.model.wallPieces) {
       const geo = orientedBox(
         THREE,
@@ -847,8 +880,9 @@ export function mountView(THREE, addons, options) {
         piece.thickness / 1000,
         piece.rotDeg,
       );
-      const tint = piece.bearing ? wallColor.bearing : (piece.exterior ? wallColor.exterior : wallColor.interior);
-      stampClipAttrs(THREE, geo, tint, piece.startSec, piece.riseSec, piece.fullHeight / 1000);
+      const cap = piece.bearing ? wallColor.bearing : wallColor.exterior;
+      stampWallPaint(THREE, geo, cap, bake);
+      stampClipOnly(THREE, geo, piece.startSec, piece.riseSec, piece.fullHeight / 1000);
       geos.push(geo);
     }
     const merged = mergeList(geos);
@@ -1149,6 +1183,20 @@ export function mountView(THREE, addons, options) {
     return merged;
   }
 
+  function sunDir() {
+    const plan = getPlan() || {};
+    const bounds = planBoundsMm(plan);
+    const top = buildingTopMm(plan) / 1000;
+    const w = Math.max(0.5, (bounds.maxX - bounds.minX) / 1000);
+    const d = Math.max(0.5, (bounds.maxY - bounds.minY) / 1000);
+    const span = Math.max(w, d) * 0.72 + 0.8;
+    const dx = w * 0.2;
+    const dy = top + Math.max(8, span) - Math.min(top * 0.35, 1.5);
+    const dz = d * 0.45;
+    const len = Math.hypot(dx, dy, dz) || 1;
+    return { x: dx / len, y: dy / len, z: dz / len };
+  }
+
   function fitShadow() {
     const plan = getPlan() || {};
     const bounds = planBoundsMm(plan);
@@ -1445,6 +1493,22 @@ function namedGroup(THREE, name) {
   return group;
 }
 
+function patchWallPaint(material, uTime, uHeightCap, uWallLift) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uTime;
+    shader.uniforms.uHeightCap = uHeightCap;
+    shader.uniforms.uWallLift = uWallLift;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${CLIP_VERT}\nattribute vec3 aCap;\nvarying vec3 vCap;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n  vLocalY = position.y;\n  vStart = aStart;\n  vRise = aRise;\n  vFullH = aFullH;\n  vCap = aCap;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${CLIP_FRAG}\nvarying vec3 vCap;\nuniform float uWallLift;`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${CLIP_DISCARD}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${WALL_SECTION}`);
+  };
+  material.customProgramCacheKey = () => 'hs-wall-paint-1';
+}
+
 function patchClip(material, uTime, uHeightCap) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uTime;
@@ -1505,10 +1569,103 @@ function stampColor(THREE, geo, color) {
 
 function stampClipAttrs(THREE, geo, color, start, rise, fullH) {
   stampColor(THREE, geo, color);
+  stampClipOnly(THREE, geo, start, rise, fullH);
+}
+
+function stampClipOnly(THREE, geo, start, rise, fullH) {
   const count = geo.getAttribute('position').count;
   geo.setAttribute('aStart', new THREE.Float32BufferAttribute(new Float32Array(count).fill(start), 1));
   geo.setAttribute('aRise', new THREE.Float32BufferAttribute(new Float32Array(count).fill(rise), 1));
   geo.setAttribute('aFullH', new THREE.Float32BufferAttribute(new Float32Array(count).fill(fullH), 1));
+}
+
+/** Per-vertex paint so Lambert lands on the latex colours. Cap stays dark. */
+function stampWallPaint(THREE, geo, capColor, bake) {
+  const normal = geo.getAttribute('normal');
+  const count = geo.getAttribute('position').count;
+  const color = new Float32Array(count * 3);
+  const caps = new Float32Array(count * 3);
+  const section = bake.section;
+  for (let i = 0; i < count; i += 1) {
+    const nx = normal.getX(i);
+    const ny = normal.getY(i);
+    const nz = normal.getZ(i);
+    let target = bake.shade;
+    let ndot = 0;
+    let up = 0;
+    if (ny > 0.5) {
+      target = capColor;
+      ndot = bake.sun.y;
+      up = 1;
+    } else if (ny > -0.5) {
+      const toward = nx * bake.sun.x + nz * bake.sun.z;
+      target = toward > 0 ? bake.face : bake.shade;
+      ndot = Math.max(0, toward);
+    }
+    const factor = bake.factor(ndot, up);
+    const lift = bake.lift;
+    color[i * 3] = clamp01(target.r / (lift * factor[0]));
+    color[i * 3 + 1] = clamp01(target.g / (lift * factor[1]));
+    color[i * 3 + 2] = clamp01(target.b / (lift * factor[2]));
+    caps[i * 3] = clamp01(capColor.r / section[0]);
+    caps[i * 3 + 1] = clamp01(capColor.g / section[1]);
+    caps[i * 3 + 2] = clamp01(capColor.b / section[2]);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(color, 3));
+  geo.setAttribute('aCap', new THREE.Float32BufferAttribute(caps, 3));
+}
+
+function clamp01(value) {
+  if (!(value > 0)) return 0;
+  return value > 1 ? 1 : value;
+}
+
+/** Linear multiplier Lambert applies to diffuseColor for this NdotL / normal.y. */
+function lambertFactor(ambient, hemi, sun, ndot, up) {
+  const weight = 0.5 * up + 0.5;
+  const out = [0, 0, 0];
+  const keys = ['r', 'g', 'b'];
+  for (let i = 0; i < 3; i += 1) {
+    const key = keys[i];
+    const irr = ambient.color[key] * ambient.intensity
+      + (hemi.groundColor[key] * (1 - weight) + hemi.color[key] * weight) * hemi.intensity
+      + Math.max(ndot, 0) * sun.color[key] * sun.intensity;
+    out[i] = irr / Math.PI;
+  }
+  return out;
+}
+
+function skyBackdrop(THREE) {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 64);
+    gradient.addColorStop(0, cssToken('--sky-day-top'));
+    gradient.addColorStop(1, cssToken('--sky-day-bottom'));
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 2, 64);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    return texture;
+  } catch (err) {
+    return readColor(THREE, '--sky-day-bottom');
+  }
+}
+
+function cssToken(name) {
+  const fallback = TOKEN_FALLBACK[name] || '#cccccc';
+  try {
+    const got = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (got) return got;
+  } catch (err) {
+    return fallback;
+  }
+  return fallback;
 }
 
 function toShape(THREE, poly) {

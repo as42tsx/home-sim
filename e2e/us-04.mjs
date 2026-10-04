@@ -25,7 +25,7 @@ try {
       return view.debugRay(2.7, 1.0, 1.05, 1, 0, 0).filter((hit) => hit.kind === 'leaf' || hit.kind === 'walls').slice(0, 3);
     });
   })();
-  await page.locator('[data-testid="hud-back"]').click();
+  await page.locator('.topbar [data-action="view3d"]').click();
   await page.waitForFunction(() => !document.querySelector('.plan-svg').hidden, null, { timeout: 8000 });
   rep.check('US-04 AC2', swung?.swing === 'out' && swung?.hinge === 'right' && beforeLeaf.some((hit) => hit.kind === 'leaf'), `swing ${swung?.swing}/${swung?.hinge} leafHits ${beforeLeaf.length}`);
 

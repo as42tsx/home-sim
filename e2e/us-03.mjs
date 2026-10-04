@@ -42,8 +42,7 @@ try {
   const info = await page.evaluate(() => window.__HOMESIM_DEBUG__.renderInfo());
   rep.check('US-03 AC2', !!bath && info.frames > 0, `floor ${bath?.floor || room?.floor}; 3D frames ${info.frames} (colour follows the room-type token)`);
 
-  await page.keyboard.press('t');
-  await page.locator('[data-testid="hud-back"]').click();
+  await page.locator('.topbar [data-action="view3d"]').click();
   await page.waitForFunction(() => document.body.dataset.mode === 'plan' && !document.querySelector('.plan-svg').hidden);
 
   const { page: open } = await newPage(browser);

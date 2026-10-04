@@ -44,7 +44,7 @@ body {
   width: var(--toolrail-w);
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   padding-top: var(--sp-3);
   background: var(--paper-1);
   border-right: 1px solid var(--line-1);

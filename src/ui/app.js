@@ -28,6 +28,7 @@ import {
   wallPatchCommand,
 } from '../editor/commands.js';
 import { previewDemolish } from '../editor/demolish.js';
+import { entryMarker, exteriorDimensions } from '../editor/dimensions.js';
 import { angleDeg, escapeHtml, formatAngle, formatAreaM2, formatAreaMm2, formatMm } from '../editor/format.js';
 import { snapFurnitureToWall } from '../editor/furniture-snap.js';
 import { hitTest, rotateHandlePoint } from '../editor/hit.js';
@@ -278,10 +279,15 @@ function ensureChrome() {
   ui.hud.dataset.testid = 'hud3d';
   ui.hud.hidden = true;
   ui.hud.innerHTML = `
-    <button type="button" class="btn" data-action="cutaway" data-testid="hud-cutaway" aria-pressed="false"><span data-i18n="action.cutaway">剖切</span></button>
-    <button type="button" class="btn" data-action="walk" data-testid="hud-walk"><span data-i18n="action.walk">漫游</span></button>
-    <button type="button" class="btn" data-action="reset-view" data-testid="hud-reset"><span data-i18n="action.resetView">复位</span></button>
-    <button type="button" class="btn" data-action="back-2d" data-testid="hud-back"><span data-i18n="action.back2d">返回 2D</span></button>`;
+    <div class="hud-row">
+      <div class="hud-seg" role="group">
+        <button type="button" data-action="bird" data-testid="hud-bird" aria-pressed="true"><span data-i18n="action.bird">鸟瞰</span></button>
+        <button type="button" data-action="walk" data-testid="hud-walk" aria-pressed="false"><span data-i18n="action.walk">漫游</span></button>
+        <button type="button" data-action="cutaway" data-testid="hud-cutaway" aria-pressed="false"><span data-i18n="action.cutaway">剖切墙</span></button>
+      </div>
+      <button type="button" class="btn hud-reset" data-action="reset-view" data-testid="hud-reset" data-i18n-title="action.resetView" aria-label="复位"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.2-5.5"/><path d="M4 4v5h5"/></svg></button>
+    </div>
+    <div class="hud-hint" data-hud-hint></div>`;
   ui.readout = ensureDiv('readonly-banner', 'data-readonly');
   ui.readout.dataset.testid = 'readonly-banner';
   ui.readout.hidden = true;
@@ -388,11 +394,12 @@ function syncSheet() {
 function paint3dButton() {
   const loading = !!state.view3dBusy;
   const blocked = !!(state.webgl && state.webgl.ok === false);
-  const label = loading ? t('view3d.loading') : t('action.view3d');
+  const in3d = state.mode === 'view3d';
+  const label = loading ? t('view3d.loading') : in3d ? t('action.to2d') : t('action.view3d');
   for (const button of document.querySelectorAll('[data-action="view3d"]')) {
     const span = button.querySelector('span');
     if (span) span.textContent = label;
-    button.disabled = loading || blocked;
+    button.disabled = loading || (blocked && !in3d);
     if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
   }
   for (const button of document.querySelectorAll('button[data-mode="view3d"]')) {
@@ -401,14 +408,29 @@ function paint3dButton() {
   }
 }
 
+function touchHud() {
+  if (state.layout === 'phone') return true;
+  try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch { return false; }
+}
+
 function renderHud() {
   if (!ui.hud) return;
   const on = state.mode === 'view3d' && !state.pickerOpen;
   ui.hud.hidden = !on;
+  const walking = walkingNow();
   const cut = ui.hud.querySelector('[data-action="cutaway"]');
   if (cut) cut.setAttribute('aria-pressed', state.cutaway ? 'true' : 'false');
   const walk = ui.hud.querySelector('[data-action="walk"]');
-  if (walk) walk.setAttribute('aria-pressed', walkingNow() ? 'true' : 'false');
+  if (walk) walk.setAttribute('aria-pressed', walking ? 'true' : 'false');
+  const bird = ui.hud.querySelector('[data-action="bird"]');
+  if (bird) bird.setAttribute('aria-pressed', walking ? 'false' : 'true');
+  const reset = ui.hud.querySelector('[data-action="reset-view"]');
+  if (reset) reset.setAttribute('aria-label', t('action.resetView'));
+  const hint = ui.hud.querySelector('[data-hud-hint]');
+  if (hint) {
+    const key = walking ? 'hud.walk' : touchHud() ? 'hud.touch' : 'hud.orbit';
+    hint.textContent = t(key);
+  }
 }
 
 function selectionAnchor() {
@@ -1204,7 +1226,10 @@ function defaultsHTML() {
   const p = state.prefs;
   const num = (pref, label) => `
     <div class="field"><label>${escapeHtml(label)}</label>
-      <input type="number" data-pref="${pref}" value="${escapeHtml(p[pref])}" />
+      <div class="unit-field">
+        <input type="number" data-pref="${pref}" value="${escapeHtml(p[pref])}" />
+        <small>mm</small>
+      </div>
     </div>`;
   return `
     <section class="defaults">
@@ -1427,6 +1452,7 @@ function buildModel() {
     return {
       camera, cursor, rooms: [], walls: [], openings: [], furniture: [],
       labels: [], handles: [], guides: state.snap?.guides || [], bubbles: [], lower: null,
+      exteriorDims: null, entryMark: null,
     };
   }
   const live = liveDerive(state.floorId);
@@ -1580,7 +1606,15 @@ function buildModel() {
     dimension,
     snap: state.snap?.kind === 'endpoint' ? { x: state.snap.point.x, y: state.snap.point.y, kind: 'endpoint' } : null,
     lower,
+    exteriorDims: exteriorDimensions(floor),
+    entryMark: entryMarkFor(floor),
   };
+}
+
+function entryMarkFor(floor) {
+  const mark = entryMarker(floor);
+  if (!mark) return null;
+  return { ...mark, label: t('plan.entry') };
 }
 
 function shapeOf(item) {
@@ -1604,12 +1638,23 @@ function floorGraphics(floor, derived, opts) {
     });
     if (opts.labels !== false) {
       const at = face.centroid || points[0];
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const point of points) {
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x);
+        maxY = Math.max(maxY, point.y);
+      }
       labels.push({
         id: String(face.roomId),
         x: at.x,
         y: at.y,
         name: room?.name || '',
         area: t('net.room', { area: formatAreaM2(face.areaM2 || 0) }),
+        minX, minY, maxX, maxY,
       });
     }
   }
@@ -1682,6 +1727,34 @@ function cursorFor() {
   return 'default';
 }
 
+function phoneFitFrame(size) {
+  if (layoutName() !== 'phone' || !svg) return null;
+  const rect = svg.getBoundingClientRect();
+  let left = 16;
+  const rail = ui.tools;
+  if (rail) {
+    const style = getComputedStyle(rail);
+    const shown = style.display !== 'none' && style.visibility !== 'hidden' && !rail.hidden;
+    if (shown) {
+      const box = rail.getBoundingClientRect();
+      if (box.width > 8 && box.right > rect.left) left = Math.max(16, box.right - rect.left + 16);
+    }
+  }
+  let sheetH = 0;
+  const sheet = ui.sheet;
+  if (sheet && getComputedStyle(sheet).display !== 'none') {
+    const handle = sheet.querySelector('.sheet-handle')?.getBoundingClientRect().height || 0;
+    const tabs = sheet.querySelector('.sheet-tabs')?.getBoundingClientRect().height || 0;
+    sheetH = handle + tabs;
+  }
+  const top = 16;
+  // 16 px keeps the tool strip off the walls. The extra right inset leaves
+  // the entry label (about 28 px outside the outer face) on screen.
+  const right = Math.max(left + 48, size.w - 48);
+  const bottom = Math.max(top + 48, size.h - sheetH - 8);
+  return { left, top, right, bottom };
+}
+
 function fitCamera() {
   const size = view?.size() || { w: 0, h: 0 };
   if (size.w < 20 || size.h < 20) {
@@ -1698,10 +1771,16 @@ function fitCamera() {
       pts.push({ x: item.cx + item.w / 2, y: item.cy + item.d / 2 });
     }
   }
+  const frame = phoneFitFrame(size);
   if (!pts.length) {
     state.camera.k = 0.05;
-    state.camera.x = size.w / 2;
-    state.camera.y = size.h / 2;
+    if (frame) {
+      state.camera.x = (frame.left + frame.right) / 2;
+      state.camera.y = (frame.top + frame.bottom) / 2;
+    } else {
+      state.camera.x = size.w / 2;
+      state.camera.y = size.h / 2;
+    }
   } else {
     let minX = Infinity;
     let minY = Infinity;
@@ -1713,11 +1792,20 @@ function fitCamera() {
       maxX = Math.max(maxX, point.x);
       maxY = Math.max(maxY, point.y);
     }
-    const pad = 80;
-    const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
-    state.camera.k = Math.max(0.002, Math.min(2, k));
-    state.camera.x = (size.w - (minX + maxX) * state.camera.k) / 2;
-    state.camera.y = (size.h - (minY + maxY) * state.camera.k) / 2;
+    if (frame) {
+      const availW = frame.right - frame.left;
+      const availH = frame.bottom - frame.top;
+      const k = Math.min(availW / Math.max(1, maxX - minX), availH / Math.max(1, maxY - minY));
+      state.camera.k = Math.max(0.002, Math.min(2, k));
+      state.camera.x = frame.left + (availW - (minX + maxX) * state.camera.k) / 2;
+      state.camera.y = frame.top + (availH - (minY + maxY) * state.camera.k) / 2;
+    } else {
+      const pad = 80;
+      const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
+      state.camera.k = Math.max(0.002, Math.min(2, k));
+      state.camera.x = (size.w - (minX + maxX) * state.camera.k) / 2;
+      state.camera.y = (size.h - (minY + maxY) * state.camera.k) / 2;
+    }
   }
   renderCanvas();
   renderStatus();
@@ -2422,7 +2510,10 @@ function onKeyDown(event) {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const mod = event.ctrlKey || event.metaKey;
   if (state.readOnly) {
-    if (key === 't') void enter3d(true);
+    if (key === 't') {
+      if (state.mode === 'view3d') setMode('plan');
+      else void enter3d(true);
+    }
     return;
   }
   if (mod && key === 'z') {
@@ -2477,7 +2568,11 @@ function onKeyDown(event) {
     setTool('room');
     return;
   }
-  if (key === 't') { void enter3d(true); return; }
+  if (key === 't') {
+    if (state.mode === 'view3d') setMode('plan');
+    else void enter3d(true);
+    return;
+  }
   const toolByKey = { v: 'select', w: 'wall', d: 'door', n: 'window', x: 'demolish', m: 'measure', h: 'pan' };
   if (toolByKey[key]) setTool(toolByKey[key]);
 }
@@ -2801,7 +2896,15 @@ function onAction(action, node, event) {
   else if (action === 'export-json') exportJSON();
   else if (action === 'import-json') ui.file.click();
   else if (action === 'lang') void toggleLang();
-  else if (action === 'view3d') void enter3d(false);
+  else if (action === 'view3d') {
+    if (state.mode === 'view3d') setMode('plan');
+    else void enter3d(false);
+  } else if (action === 'bird') {
+    state.walkPick = false;
+    if (walkingNow()) state.view3d.exitWalk();
+    if (state.mode !== 'view3d') void enter3d(false);
+    else renderHud();
+  }
   else if (action === 'inspector') ui.inspector.classList.toggle('is-open');
   else if (action === 'help') openHelp();
   else if (action === 'tool-measure') setTool('measure');

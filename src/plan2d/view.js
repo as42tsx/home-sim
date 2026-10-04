@@ -51,6 +51,15 @@ function dropMissing(parent, keep) {
   }
 }
 
+function labelNeedsNameOnly(label, k) {
+  const width = (label.maxX - label.minX) * k;
+  const height = (label.maxY - label.minY) * k;
+  if (width < 60 || height < 40) return true;
+  let textW = 0;
+  for (const ch of label.area || '') textW += ch.charCodeAt(0) > 255 ? 12 : 7.2;
+  return width < textW + 8;
+}
+
 function screenOf(camera, point) {
   return {
     x: camera.x + point.x * camera.k,
@@ -342,8 +351,10 @@ function openingNodes(item) {
     nodes.push(parallel(geom, item.opening.width, thick * 0.18, stroke));
     nodes.push(parallel(geom, item.opening.width, thick * -0.18, stroke));
   } else {
+    const placed = !item.preview;
     nodes.push(el('line', {
-      ...lineAttrs(geom.hinge.x, geom.hinge.y, geom.leaf.x, geom.leaf.y, stroke),
+      ...lineAttrs(geom.hinge.x, geom.hinge.y, geom.leaf.x, geom.leaf.y, placed ? 'var(--ink-1)' : stroke),
+      'stroke-width': placed ? 2 : 1.5,
     }));
     const r = item.opening.width;
     const v1x = geom.jamb.x - geom.hinge.x;
@@ -354,9 +365,9 @@ function openingNodes(item) {
     nodes.push(el('path', {
       d: `M ${geom.jamb.x} ${geom.jamb.y} A ${r} ${r} 0 0 ${sweep} ${geom.leaf.x} ${geom.leaf.y}`,
       fill: 'none',
-      stroke: item.preview ? 'var(--ok)' : 'var(--ink-3)',
-      'stroke-width': 1.25,
-      'stroke-dasharray': '5 4',
+      stroke: placed ? 'var(--ink-2)' : 'var(--ok)',
+      'stroke-width': placed ? 1.2 : 1.25,
+      'stroke-dasharray': placed ? 'none' : '5 4',
       'vector-effect': 'non-scaling-stroke',
     }));
   }
@@ -503,7 +514,10 @@ function paintScreen(group, model) {
     name.textContent = label.name;
     area.setAttribute('x', at.x);
     area.setAttribute('y', at.y + 16);
-    area.textContent = label.area;
+    const k = camera?.k || 0;
+    const compact = label.maxX != null && labelNeedsNameOnly(label, k);
+    area.textContent = compact ? '' : label.area;
+    area.setAttribute('visibility', compact ? 'hidden' : 'visible');
   }
   for (const bubble of model.bubbles || []) {
     keep.add(`bubble:${bubble.id}`);
@@ -601,7 +615,115 @@ function paintScreen(group, model) {
       line.setAttribute('stroke-width', '1.25');
     }
   }
+  paintExteriorDims(group, model, keep);
+  paintEntryMark(group, model, keep);
   dropMissing(group, keep);
+}
+
+const DIM_SEG = 34;
+const DIM_ALL = 58;
+const DIM_TICK = 6;
+
+function paintExteriorDims(group, model, keep) {
+  const dims = model.exteriorDims;
+  const camera = model.camera;
+  if (!dims || !camera) return;
+  keep.add('dims');
+  const g = slot(group, 'dims', 'g');
+  g.replaceChildren();
+  paintDimSide(g, camera, dims.top);
+  paintDimSide(g, camera, dims.left);
+}
+
+function paintDimSide(group, camera, side) {
+  if (!side || !side.points || side.points.length < 2) return;
+  const outer = side.points.map((point) => screenOf(camera, {
+    x: point.x + side.outward.x * point.half,
+    y: point.y + side.outward.y * point.half,
+  }));
+  paintDimRow(group, outer, side.lengths, side.outward, DIM_SEG);
+  paintDimRow(group, [outer[0], outer[outer.length - 1]], [side.overall], side.outward, DIM_ALL);
+}
+
+function paintDimRow(group, points, lengths, outward, dist) {
+  const line = points.map((point) => ({
+    x: point.x + outward.x * dist,
+    y: point.y + outward.y * dist,
+  }));
+  const first = line[0];
+  const last = line[line.length - 1];
+  group.append(el('line', {
+    x1: first.x, y1: first.y, x2: last.x, y2: last.y,
+    stroke: 'var(--dim-line)', 'stroke-width': 1,
+  }));
+  for (const point of line) {
+    group.append(el('line', {
+      x1: point.x - outward.x * DIM_TICK,
+      y1: point.y - outward.y * DIM_TICK,
+      x2: point.x + outward.x * DIM_TICK,
+      y2: point.y + outward.y * DIM_TICK,
+      stroke: 'var(--dim-line)', 'stroke-width': 1,
+    }));
+  }
+  const vertical = Math.abs(outward.x) > 0.5;
+  for (let i = 0; i < lengths.length; i += 1) {
+    const mid = {
+      x: (line[i].x + line[i + 1].x) / 2 + outward.x * 9,
+      y: (line[i].y + line[i + 1].y) / 2 + outward.y * 9,
+    };
+    const attrs = {
+      class: 'dim-num',
+      x: mid.x,
+      y: mid.y,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+    };
+    if (vertical) attrs.transform = `rotate(-90 ${mid.x} ${mid.y})`;
+    const text = el('text', attrs);
+    text.textContent = String(Math.round(lengths[i]));
+    group.append(text);
+  }
+}
+
+function paintEntryMark(group, model, keep) {
+  const mark = model.entryMark;
+  const camera = model.camera;
+  if (!mark || !camera) return;
+  keep.add('entry');
+  const g = slot(group, 'entry', 'g');
+  g.replaceChildren();
+  const tick = 16;
+  for (const jamb of [mark.jambA, mark.jambB]) {
+    const outer = screenOf(camera, {
+      x: jamb.x + mark.outward.x * mark.half,
+      y: jamb.y + mark.outward.y * mark.half,
+    });
+    g.append(el('line', {
+      x1: outer.x,
+      y1: outer.y,
+      x2: outer.x + mark.outward.x * tick,
+      y2: outer.y + mark.outward.y * tick,
+      stroke: 'var(--ink-2)',
+      'stroke-width': 1,
+    }));
+  }
+  const mid = screenOf(camera, {
+    x: (mark.jambA.x + mark.jambB.x) / 2 + mark.outward.x * mark.half,
+    y: (mark.jambA.y + mark.jambB.y) / 2 + mark.outward.y * mark.half,
+  });
+  const at = {
+    x: mid.x + mark.outward.x * 28,
+    y: mid.y + mark.outward.y * 28,
+  };
+  const text = el('text', {
+    class: 'entry-mark',
+    x: at.x,
+    y: at.y,
+    'text-anchor': 'middle',
+    'dominant-baseline': 'middle',
+  });
+  text.textContent = mark.label || '';
+  g.append(text);
 }
 
 function paintPill(group, x, y, text, tone) {

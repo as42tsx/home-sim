@@ -104,7 +104,7 @@ try {
   await page.waitForTimeout(200);
   const reset = await page.evaluate(() => window.__HOMESIM_DEBUG__.view3d().debugState().camera);
   const resetBack = Math.hypot(reset[0] - home[0], reset[1] - home[1], reset[2] - home[2]) < 0.15;
-  await page.locator('[data-testid="hud-back"]').click();
+  await page.locator('.topbar [data-action="view3d"]').click();
   await page.waitForFunction(() => document.body.dataset.mode === 'plan');
   const still = await page.evaluate(() => {
     const plan = window.__HOMESIM_DEBUG__.getPlan();

@@ -83,7 +83,7 @@ try {
   const size2 = pngSize(png2.file);
   const long2 = Math.max(size2.w, size2.h);
   await enter3d(page);
-  await page.locator('[data-testid="hud-back"]').waitFor();
+  await page.locator('[data-testid="hud-bird"]').waitFor();
   const png3 = await readDownload(page, async () => {
     await page.locator('.topbar [data-action="file-menu"]').click();
     await page.locator('.topbar [data-action="export-png"]').click();

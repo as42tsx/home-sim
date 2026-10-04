@@ -14,6 +14,8 @@ export const TOKEN_FALLBACK = {
   '--wall': '#3a332c',
   '--wall-bearing': '#1f1b17',
   '--wall-interior': '#8a7d70',
+  '--wall-3d-face': '#e9e2d6',
+  '--wall-3d-face-shade': '#cfc6b8',
   '--ground-3d': '#ddd4c4',
   '--sky-day-top': '#f3eee6',
   '--sky-day-bottom': '#e4dccd',

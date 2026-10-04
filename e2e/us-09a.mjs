@@ -139,6 +139,14 @@ try {
   const fabLater = shown.includes('select') && shown.includes('wall') && shown.includes('door') && shown.includes('window') && shown.includes('demolish')
     && !shown.includes('measure') && !shown.includes('room') && !shown.includes('pan');
   rep.check('LAYOUT phone chrome', phoneEdit.topH >= 50 && phoneEdit.topH <= 56 && phoneEdit.tabH >= 64 && phoneEdit.tabH <= 72 && phoneEdit.fileHidden && fabLater && phoneEdit.scroll <= 1 && phoneEdit.ratio >= 0.75, `top ${phoneEdit.topH} tab ${phoneEdit.tabH} tools ${shown.join(',')} visible ${(phoneEdit.ratio * 100).toFixed(1)}%`);
+  const hits = await edit.page.evaluate(() => {
+    const height = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect().height : 0;
+    };
+    return { handle: height('.sheet-handle'), tab: height('.sheet-tabs button'), furn: height('.furn-item') };
+  });
+  rep.check('LAYOUT hit targets', hits.handle >= 44 && hits.tab >= 44 && hits.furn >= 44, JSON.stringify(hits));
 
   await edit.page.evaluate(async () => {
     const { furnitureAddCommand } = await import('./src/editor/commands.js');

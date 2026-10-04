@@ -40,7 +40,7 @@ try {
   });
   rep.check('US-21 AC3 3D', stacked && hole.inside === 'none' && hole.outside === 'slab', `elev ${elevations.join(',')} hole inside ${hole.inside} outside ${hole.outside}`);
 
-  await page.locator('[data-testid="hud-back"]').click();
+  await page.locator('.topbar [data-action="view3d"]').click();
   await page.waitForFunction(() => !document.querySelector('.plan-svg').hidden, null, { timeout: 8000 });
   await page.locator('.inspector [data-field="room-name"], .inspector .room-row').first().click();
   const nameBox = page.locator('.inspector [data-field="room-name"]');

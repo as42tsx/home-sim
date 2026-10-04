@@ -135,6 +135,62 @@ export function removePlan(storage, id) {
 }
 
 /**
+ * One in-memory tombstone for the last delete. Dropped after the undo window.
+ * @type {{ id: string, plan: object|null, raw: string|null, indexEntry: object|null, wasLast: boolean, wasOpen: boolean }|null}
+ */
+let tombstone = null;
+
+/**
+ * Remove a plan from storage and keep enough to put it back exactly.
+ * @param {Storage} storage
+ * @param {string} id
+ * @param {{ wasOpen?: boolean }} [meta]
+ */
+export function deletePlanWithUndo(storage, id, meta = {}) {
+  const raw = storage.getItem(planKey(id));
+  const plan = readPlan(storage, id);
+  const indexEntry = readIndex(storage).find((item) => item.id === id) || null;
+  const wasLast = readLastId(storage) === id;
+  removePlan(storage, id);
+  tombstone = {
+    id,
+    plan,
+    raw,
+    indexEntry: indexEntry ? { ...indexEntry } : null,
+    wasLast,
+    wasOpen: !!meta.wasOpen,
+  };
+  return {
+    id: tombstone.id,
+    plan: tombstone.plan,
+    indexEntry: tombstone.indexEntry ? { ...tombstone.indexEntry } : null,
+    wasLast: tombstone.wasLast,
+    wasOpen: tombstone.wasOpen,
+  };
+}
+
+/** Put the tombstone back. Returns it, or null when there is nothing to restore. */
+export function restoreDeleted(storage) {
+  const saved = tombstone;
+  if (!saved?.plan) {
+    tombstone = null;
+    return null;
+  }
+  tombstone = null;
+  storage.setItem(planKey(saved.id), saved.raw != null ? saved.raw : JSON.stringify(saved.plan));
+  const list = readIndex(storage).filter((item) => item.id !== saved.id);
+  if (saved.indexEntry) list.push({ ...saved.indexEntry });
+  writeIndex(storage, list);
+  if (saved.wasLast) writeLastId(storage, saved.id);
+  return saved;
+}
+
+/** Forget the tombstone. Called when the undo window ends. */
+export function dropDeleted() {
+  tombstone = null;
+}
+
+/**
  * @param {Storage} storage
  * @param {string} id
  * @param {string} name

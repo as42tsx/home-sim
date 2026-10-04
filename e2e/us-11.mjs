@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { launch, newPage, openApp, report, finish, ROOT } from './lib.mjs';
+import { launch, newPage, openApp, report, finish, ROOT, BASE } from './lib.mjs';
 
 const rep = report();
 const browser = await launch();
@@ -8,7 +8,7 @@ try {
   const { page } = await newPage(browser);
   await openApp(page);
   const hosts = [...page._hs.hosts];
-  const third = hosts.filter((host) => !host.startsWith('127.0.0.1'));
+  const third = hosts.filter((host) => host !== new URL(BASE).host);
   const license = fs.existsSync(path.join(ROOT, 'vendor/three/LICENSE'));
   rep.manual('US-11 AC1', 'push is not part of this run; Pages deploy is the tracked workflow and was not executed');
   rep.check('US-11 AC2', third.length === 0 && license, `hosts ${hosts.join(',') || 'none'} three LICENSE ${license}`);

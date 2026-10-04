@@ -6,6 +6,7 @@
  */
 
 import { pointInPolygon } from '../geometry/polygon.js';
+import { catalogEntry } from '../furniture/catalog.js';
 
 const TOUCH_MM = 0.05;
 
@@ -28,6 +29,21 @@ export function obbCorners(item) {
   }));
 }
 
+/**
+ * Rugs and other floor coverings never take part in a collision check.
+ * A placed item may set `noCollide`, or the catalog entry may.
+ * `shape: 'flat'` is the floor-covering shape.
+ * @param {object} item
+ */
+export function ignoresCollision(item) {
+  if (!item) return false;
+  if (item.noCollide) return true;
+  if (item.type === 'rug') return true;
+  const entry = item.type ? catalogEntry(item.type) : null;
+  if (!entry) return false;
+  return !!(entry.noCollide || entry.shape === 'flat');
+}
+
 /** True when the polygons overlap by more than a touch. */
 export function satOverlap(a, b) {
   if (!a || !b || a.length < 2 || b.length < 2) return false;
@@ -48,7 +64,9 @@ export function satOverlap(a, b) {
  */
 export function warningIds(furniture, wallQuads, faces) {
   const ids = new Set();
-  const list = (furniture || []).map((item) => ({ item, corners: obbCorners(item) }));
+  const list = (furniture || [])
+    .filter((item) => !ignoresCollision(item))
+    .map((item) => ({ item, corners: obbCorners(item) }));
   for (let i = 0; i < list.length; i += 1) {
     for (let j = i + 1; j < list.length; j += 1) {
       if (satOverlap(list[i].corners, list[j].corners)) {
@@ -68,6 +86,42 @@ export function warningIds(furniture, wallQuads, faces) {
     if (hitWall || !inside) ids.add(list[i].item.id);
   }
   return ids;
+}
+
+/**
+ * First furniture pair that overlaps. Rugs and `noCollide` items are skipped.
+ * Wall and outside-room warnings are not pairs.
+ * @param {object[]} furniture
+ * @returns {{ a: object, b: object }|null}
+ */
+export function firstOverlap(furniture) {
+  const list = (furniture || [])
+    .filter((item) => !ignoresCollision(item))
+    .map((item) => ({ item, corners: obbCorners(item) }));
+  for (let i = 0; i < list.length; i += 1) {
+    for (let j = i + 1; j < list.length; j += 1) {
+      if (satOverlap(list[i].corners, list[j].corners)) {
+        return { a: list[i].item, b: list[j].item };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Other items that overlap `id`. Empty when `id` itself does not collide.
+ * @param {object[]} furniture
+ * @param {string} id
+ */
+export function overlapPartners(furniture, id) {
+  const self = (furniture || []).find((item) => item.id === id);
+  if (!self || ignoresCollision(self)) return [];
+  const corners = obbCorners(self);
+  return (furniture || []).filter((other) => (
+    other.id !== id
+    && !ignoresCollision(other)
+    && satOverlap(corners, obbCorners(other))
+  ));
 }
 
 function pointInNet(p, face) {

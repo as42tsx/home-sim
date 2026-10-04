@@ -74,6 +74,35 @@ try {
   await phone.page.locator('.tabbar [data-mode="view3d"]').click();
   await phone.page.waitForFunction(() => document.body.dataset.mode === 'view3d' && !document.querySelector('.topbar [data-action="view3d"]')?.disabled, null, { timeout: 40000 });
   await shot(phone.page, 'mobile-3d.png');
+  const framed = await phone.page.evaluate(() => {
+    const plan = window.__HOMESIM_DEBUG__.getPlan();
+    const floor = (plan.floors || []).find((item) => item && item.nodes && item.nodes.length) || null;
+    const view = window.__HOMESIM_DEBUG__.view3d();
+    const canvas = document.querySelector('#view3d-host canvas');
+    if (!floor || !view || !canvas) return 0;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const node of floor.nodes) {
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x);
+      maxY = Math.max(maxY, node.y);
+    }
+    const rect = canvas.getBoundingClientRect();
+    const pts = [];
+    for (const x of [minX, maxX]) {
+      for (const y of [minY, maxY]) {
+        pts.push(view.debugProject(x, y, 0));
+        pts.push(view.debugProject(x, y, 2.6));
+      }
+    }
+    const xs = pts.filter((point) => point.visible).map((point) => point.x);
+    if (!xs.length || rect.width < 1) return 0;
+    return (Math.max(...xs) - Math.min(...xs)) / rect.width;
+  });
+  rep.check('US-09a phone frame', framed >= 0.7, `model span ${(framed * 100).toFixed(1)}% of width`);
   const before = await phone.page.evaluate(() => window.__HOMESIM_DEBUG__.view3d().debugState().camera.slice());
   const canvas = await phone.page.locator('#view3d-host canvas').boundingBox();
   await phone.page.mouse.move(canvas.x + canvas.width * 0.5, canvas.y + canvas.height * 0.5);

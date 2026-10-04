@@ -9,7 +9,7 @@ import { formatMm } from '../editor/format.js';
 import { openingGeometry } from '../editor/opening-geom.js';
 import { wallQuad } from '../editor/wall-shape.js';
 import { niceScaleMm, planExportLayout } from '../io/png-fit.js';
-import { furnitureSymbol } from '../plan2d/furniture-symbols.js';
+import { furnitureSymbol, legendForType } from '../plan2d/furniture-symbols.js';
 
 /**
  * @param {object} model
@@ -215,6 +215,11 @@ function drawFurniture(ctx, list, colors, pxPerMm) {
   for (const entry of list) {
     const item = entry.item || entry;
     if (!item) continue;
+    const legend = legendForType(item.type);
+    if (legend) {
+      drawLegend(ctx, legend, item, colors, !!entry.warn);
+      continue;
+    }
     const parts = furnitureSymbol(entry.shape || 'box', item.w, item.d);
     ctx.save();
     ctx.translate(item.cx, item.cy);
@@ -244,6 +249,106 @@ function drawFurniture(ctx, list, colors, pxPerMm) {
     }
     ctx.restore();
   }
+}
+
+function drawLegend(ctx, legend, item, colors, warn) {
+  ctx.save();
+  ctx.translate(item.cx, item.cy);
+  ctx.rotate(((item.rot || 0) * Math.PI) / 180);
+  const sx = (item.w || legend.w) / legend.w;
+  const sy = (item.d || legend.d) / legend.d;
+  ctx.scale(sx, sy);
+  ctx.translate(-legend.w / 2, -legend.d / 2);
+  let inner = legend.inner;
+  if (warn) inner = inner.replaceAll('var(--paper-1,#fbf8f3)', 'var(--danger-tint)');
+  const doc = new DOMParser().parseFromString(
+    `<svg xmlns="http://www.w3.org/2000/svg">${inner}</svg>`,
+    'image/svg+xml',
+  );
+  paintSvgChildren(ctx, doc.documentElement, colors);
+  ctx.restore();
+  if (warn) {
+    ctx.save();
+    ctx.translate(item.cx, item.cy);
+    ctx.rotate(((item.rot || 0) * Math.PI) / 180);
+    ctx.strokeStyle = '#b3382a';
+    const t = ctx.getTransform();
+    const scale = Math.max(Math.hypot(t.a, t.b), Math.hypot(t.c, t.d)) || 1;
+    ctx.lineWidth = 2 / scale;
+    ctx.strokeRect(-item.w / 2, -item.d / 2, item.w, item.d);
+    ctx.restore();
+  }
+}
+
+function paintSvgChildren(ctx, parent, colors) {
+  for (const node of parent.children) paintSvgNode(ctx, node, colors);
+}
+
+function paintSvgNode(ctx, node, colors) {
+  const tag = node.localName;
+  if (tag === 'g') {
+    ctx.save();
+    applySvgTransform(ctx, node.getAttribute('transform'));
+    paintSvgChildren(ctx, node, colors);
+    ctx.restore();
+    return;
+  }
+  const fillAttr = node.getAttribute('fill');
+  const strokeAttr = node.getAttribute('stroke');
+  ctx.beginPath();
+  if (tag === 'rect') {
+    const x = svgNum(node, 'x');
+    const y = svgNum(node, 'y');
+    const w = svgNum(node, 'width');
+    const h = svgNum(node, 'height');
+    const rx = svgNum(node, 'rx');
+    if (rx > 0 && typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, rx);
+    else ctx.rect(x, y, w, h);
+  } else if (tag === 'line') {
+    ctx.moveTo(svgNum(node, 'x1'), svgNum(node, 'y1'));
+    ctx.lineTo(svgNum(node, 'x2'), svgNum(node, 'y2'));
+  } else if (tag === 'circle') {
+    const r = svgNum(node, 'r');
+    if (r > 0) ctx.arc(svgNum(node, 'cx'), svgNum(node, 'cy'), r, 0, Math.PI * 2);
+  } else if (tag === 'ellipse') {
+    const rx = svgNum(node, 'rx');
+    const ry = svgNum(node, 'ry');
+    if (rx > 0 && ry > 0) ctx.ellipse(svgNum(node, 'cx'), svgNum(node, 'cy'), rx, ry, 0, 0, Math.PI * 2);
+  } else {
+    return;
+  }
+  if (fillAttr && fillAttr !== 'none') {
+    ctx.fillStyle = resolvePaint(fillAttr, colors);
+    ctx.fill();
+  }
+  if (strokeAttr && strokeAttr !== 'none') {
+    ctx.strokeStyle = resolvePaint(strokeAttr, colors);
+    const width = parseFloat(node.getAttribute('stroke-width')) || 1.2;
+    const t = ctx.getTransform();
+    const scale = Math.max(Math.hypot(t.a, t.b), Math.hypot(t.c, t.d)) || 1;
+    ctx.lineWidth = width / scale;
+    ctx.stroke();
+  }
+}
+
+function svgNum(node, name) {
+  const value = parseFloat(node.getAttribute(name));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function resolvePaint(paint, colors) {
+  const match = /var\((--[^,)\s]+)(?:,\s*([^)]+))?\)/.exec(paint || '');
+  if (!match) return paint || colors.ink2;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim();
+  return value || (match[2] || '').trim() || colors.ink2;
+}
+
+function applySvgTransform(ctx, transform) {
+  if (!transform) return;
+  const translate = /translate\(\s*([-\d.]+)[\s,]+([-\d.]+)\s*\)/.exec(transform);
+  const rotate = /rotate\(\s*([-\d.]+)/.exec(transform);
+  if (translate) ctx.translate(Number(translate[1]), Number(translate[2]));
+  if (rotate) ctx.rotate((Number(rotate[1]) * Math.PI) / 180);
 }
 
 function drawLabels(ctx, labels, colors, pxPerMm) {

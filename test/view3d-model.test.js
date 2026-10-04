@@ -38,6 +38,50 @@ function near(actual, expected, eps = 1e-4) {
   assert.ok(Math.abs(actual - expected) <= eps, `${actual} ≠ ${expected}`);
 }
 
+/** NDC half-extent of the framed box, matching the bird-view fit. */
+function projectedFill(frame, aspect) {
+  const fov = (45 * Math.PI) / 180;
+  const halfV = Math.tan(fov / 2);
+  const halfH = halfV * Math.max(0.25, aspect);
+  const pitch = (frame.pitchDeg * Math.PI) / 180;
+  const dist = frame.dist;
+  const targetY = frame.target.y;
+  const eye = { x: 0, y: targetY + dist * Math.sin(pitch), z: dist * Math.cos(pitch) };
+  const back = norm({ x: eye.x, y: eye.y - targetY, z: eye.z });
+  const upGuess = Math.abs(back.y) > 0.98 ? { x: 0, y: 0, z: -1 } : { x: 0, y: 1, z: 0 };
+  const right = norm(cross(upGuess, back));
+  const camUp = cross(back, right);
+  let maxX = 0;
+  let maxY = 0;
+  for (const x of [-frame.width / 2, frame.width / 2]) {
+    for (const z of [-frame.depth / 2, frame.depth / 2]) {
+      for (const y of [0, frame.height]) {
+        const rel = { x: x - eye.x, y: y - eye.y, z: z - eye.z };
+        const ahead = -(rel.x * back.x + rel.y * back.y + rel.z * back.z);
+        if (ahead < 0.05) continue;
+        const xCam = rel.x * right.x + rel.y * right.y + rel.z * right.z;
+        const yCam = rel.x * camUp.x + rel.y * camUp.y + rel.z * camUp.z;
+        maxX = Math.max(maxX, Math.abs(xCam / ahead) / halfH);
+        maxY = Math.max(maxY, Math.abs(yCam / ahead) / halfV);
+      }
+    }
+  }
+  return { maxX, maxY };
+}
+
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+function norm(v) {
+  const len = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+}
+
 test('wall solids split around a door and a window', () => {
   const wall = {
     id: 'w',
@@ -231,7 +275,7 @@ test('shape table maps catalog types and caps parts', () => {
   assert.equal(partsForShape('nope')[0].geo, 'box');
   const bed = partsForShape('bed');
   assert.equal(bed.length, 4);
-  assert.equal(bed[2].cz, -0.46);
+  assert.equal(bed[2].cz, 0.46);
 });
 
 test('instance slots reuse a free list', () => {
@@ -292,6 +336,14 @@ test('camera frame follows the plan bounds', () => {
   assert.ok(end.position.z > end.target.z);
   near(end.position.x, end.target.x);
   near(end.pitchDeg, 55);
+  const portrait = frameCamera(
+    { minX: 0, minY: 0, maxX: 10000, maxY: 8000 },
+    2800,
+    { aspect: 390 / 700, fovDeg: 45 },
+  );
+  const span = projectedFill(portrait, 390 / 700);
+  assert.ok(span.maxX >= 0.7 && span.maxX <= 0.85, `width fill ${span.maxX}`);
+  assert.ok(span.maxY <= 0.93, `height fill ${span.maxY}`);
   const mid = enterPose(225, false);
   near(mid.cameraT, easeInOut(0.5));
   near(easeInOut(0.5), 0.5);

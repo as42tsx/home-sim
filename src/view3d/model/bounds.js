@@ -121,6 +121,7 @@ export function frameCamera(boundsMm, topMm, opts = {}) {
   const fovDeg = opts.fovDeg ?? 45;
   const aspect = opts.aspect && opts.aspect > 0 ? opts.aspect : 1;
   const pitchDeg = opts.pitchDeg ?? 55;
+  const fill = opts.fill > 0 && opts.fill < 1 ? opts.fill : 0.8;
   const cx = (boundsMm.minX + boundsMm.maxX) / 2 / 1000;
   const cz = (boundsMm.minY + boundsMm.maxY) / 2 / 1000;
   const width = Math.max(0.5, (boundsMm.maxX - boundsMm.minX) / 1000);
@@ -130,11 +131,96 @@ export function frameCamera(boundsMm, topMm, opts = {}) {
   const radius = 0.5 * Math.hypot(width, depth, height);
   const fov = (fovDeg * Math.PI) / 180;
   const halfV = Math.tan(fov / 2);
-  const halfH = halfV * Math.max(0.5, aspect);
-  const dist = (radius / Math.max(0.05, Math.min(halfV, halfH))) * 1.35;
-  const span = Math.max(width, depth);
-  const distTop = (span / 2) / Math.max(0.05, halfV) * 1.25;
+  const halfH = halfV * Math.max(0.25, aspect);
+  const dist = fitBirdDist({ width, depth, height, targetY: target.y, pitchDeg, halfV, halfH, fill });
+  const distTop = Math.max(
+    (width / 2) / Math.max(0.05, fill * halfH),
+    (depth / 2) / Math.max(0.05, fill * halfV),
+  );
   return { target, dist, distTop, pitchDeg, radius, width, depth, height };
+}
+
+/**
+ * Distance for the settled bird view so the model covers `fill` of the
+ * viewport width and still fits the vertical field.
+ */
+function fitBirdDist({ width, depth, height, targetY, pitchDeg, halfV, halfH, fill }) {
+  const pitch = (pitchDeg * Math.PI) / 180;
+  const corners = [];
+  for (const x of [-width / 2, width / 2]) {
+    for (const z of [-depth / 2, depth / 2]) {
+      for (const y of [0, height]) corners.push({ x, y, z });
+    }
+  }
+  const spanAt = (dist) => projectSpan(corners, dist, pitch, targetY, halfV, halfH);
+  let lo = 0.3;
+  let hi = 800;
+  for (let i = 0; i < 28; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (spanAt(mid).maxX > fill) lo = mid;
+    else hi = mid;
+  }
+  let dist = hi;
+  if (spanAt(dist).maxY > 0.92) {
+    lo = dist;
+    hi = Math.max(dist * 4, dist + 1);
+    for (let i = 0; i < 28; i += 1) {
+      const mid = (lo + hi) / 2;
+      if (spanAt(mid).maxY > 0.92) lo = mid;
+      else hi = mid;
+    }
+    dist = hi;
+  }
+  return dist;
+}
+
+function projectSpan(corners, dist, pitch, targetY, halfV, halfH) {
+  const eye = {
+    x: 0,
+    y: targetY + dist * Math.sin(pitch),
+    z: dist * Math.cos(pitch),
+  };
+  const target = { x: 0, y: targetY, z: 0 };
+  const back = norm(sub(eye, target));
+  const up = Math.abs(back.y) > 0.98 ? { x: 0, y: 0, z: -1 } : { x: 0, y: 1, z: 0 };
+  let right = norm(cross(up, back));
+  if (!Number.isFinite(right.x)) right = { x: 1, y: 0, z: 0 };
+  const camUp = cross(back, right);
+  let maxX = 0;
+  let maxY = 0;
+  for (const corner of corners) {
+    const rel = sub(corner, eye);
+    const xCam = dot(rel, right);
+    const yCam = dot(rel, camUp);
+    const zCam = dot(rel, back);
+    const ahead = -zCam;
+    if (ahead < 0.05) continue;
+    maxX = Math.max(maxX, Math.abs(xCam / ahead) / halfH);
+    maxY = Math.max(maxY, Math.abs(yCam / ahead) / halfV);
+  }
+  return { maxX, maxY };
+}
+
+function sub(a, b) {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+}
+
+function dot(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function cross(a, b) {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+function norm(v) {
+  const len = Math.hypot(v.x, v.y, v.z);
+  if (!(len > 1e-8)) return { x: NaN, y: NaN, z: NaN };
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
 }
 
 /**

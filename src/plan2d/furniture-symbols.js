@@ -2,8 +2,51 @@
  * Top-view marks for each catalog shape, in local millimetres.
  * The origin is the item centre. +x is width, +y is depth (y-down).
  * The back edge is y = -d/2 so a zero rotation shows the back toward -y.
- * Batch-2 art can replace these drawings without touching the editor.
+ * Legend art uses the same frame: the drawing's y = 0 (headboard, sofa back,
+ * toilet tank) lands on that back edge, which is also the 3D +z edge.
+ * Unknown types keep the primitive below.
  */
+
+import { LEGENDS } from '../assets/legend-modern.js';
+
+/** Catalog type → legend id. Every current type has one. */
+export const TYPE_LEGEND = Object.freeze({
+  'bed-double': 'bed-double-1800',
+  'bed-single': 'bed-single-1200',
+  wardrobe: 'wardrobe-2000',
+  nightstand: 'nightstand',
+  'sofa-3': 'sofa-3',
+  'sofa-l': 'sofa-L',
+  armchair: 'armchair',
+  'coffee-table': 'coffee-table',
+  'tv-cabinet': 'tv-unit',
+  rug: 'rug',
+  'dining-table': 'dining-4',
+  'dining-set-4': 'dining-4-set',
+  'dining-round': 'dining-round',
+  'dining-chair': 'chair',
+  desk: 'desk',
+  'office-chair': 'office-chair',
+  bookshelf: 'bookshelf',
+  fridge: 'fridge',
+  counter: 'kitchen-counter',
+  toilet: 'toilet',
+  washbasin: 'basin',
+  shower: 'shower',
+  bathtub: 'bathtub',
+  'washing-machine': 'washer',
+  plant: 'plant',
+  'floor-lamp': 'floor-lamp',
+});
+
+/**
+ * @param {string} type
+ * @returns {{ w: number, d: number, viewBox: string, inner: string }|null}
+ */
+export function legendForType(type) {
+  const id = TYPE_LEGEND[type];
+  return id ? LEGENDS[id] || null : null;
+}
 
 /**
  * @param {string} shape

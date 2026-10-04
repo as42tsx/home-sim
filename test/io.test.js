@@ -8,7 +8,7 @@ import { CATALOG } from '../src/furniture/catalog.js';
 import { createEmptyPlan, floorsByElevation } from '../src/model/document.js';
 import { SHARE_MAX_BYTES, SHARE_TARGET_2BR_BYTES } from '../src/model/constants.js';
 import { exportPlanJSON, importPlanJSON } from '../src/io/json.js';
-import { decodeShareLink, encodeShareLink } from '../src/io/share.js';
+import { SHARE_WARN_CHARS, decodeShareLink, encodeShareLink, formatThousands, shareUrlStats } from '../src/io/share.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = JSON.parse(fs.readFileSync(path.join(root, 'fixtures/two-floor-stair.json'), 'utf8'));
@@ -25,6 +25,15 @@ test('two-floor JSON round-trips', () => {
   assert.equal(newer.ok, false);
   assert.equal(newer.errors[0].code, 'NEWER_VERSION');
   assert.equal(newer.errors[0].message, '请使用新版本');
+});
+
+test('share urls longer than 8000 characters ask for a file', () => {
+  assert.equal(SHARE_WARN_CHARS, 8000);
+  assert.deepEqual(shareUrlStats('x'.repeat(8000)), { chars: 8000, warn: false });
+  assert.equal(shareUrlStats(`https://example.test/${'a'.repeat(8000)}`).warn, true);
+  assert.equal(shareUrlStats('').warn, false);
+  assert.equal(formatThousands(12345), '12\u2009345');
+  assert.equal(formatThousands(8000), '8\u2009000');
 });
 
 test('share link round-trips with deflate and lz-string', async () => {

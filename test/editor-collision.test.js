@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { satOverlap, warningIds, obbCorners } from '../src/editor/collision.js';
+import { firstOverlap, ignoresCollision, satOverlap, warningIds, obbCorners } from '../src/editor/collision.js';
 import { snapFurnitureToWall } from '../src/editor/furniture-snap.js';
 import { wallQuad } from '../src/editor/wall-shape.js';
 
@@ -42,6 +42,30 @@ test('warnings mark both overlapping items, wall crossings, and outsiders', () =
 
   const alone = warningIds([item('bed', 1000, 1000, 400, 400)], [], faces);
   assert.equal(alone.has('bed'), false);
+});
+
+test('rugs and noCollide items stay out of furniture and wall checks', () => {
+  const faces = [{
+    polygon: [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 4000 }, { x: 0, y: 4000 }],
+    holePolygons: [],
+  }];
+  const rug = { id: 'rug', type: 'rug', cx: 800, cy: 800, w: 2000, d: 1400, rot: 0 };
+  const sofa = { id: 'sofa', type: 'sofa-3', cx: 800, cy: 800, w: 2100, d: 900, rot: 0 };
+  const bed = { id: 'bed', type: 'bed-double', cx: 900, cy: 900, w: 1800, d: 2000, rot: 0 };
+  const mat = { id: 'mat', noCollide: true, cx: 100, cy: 100, w: 3000, d: 3000, rot: 0 };
+  assert.equal(ignoresCollision(rug), true);
+  assert.equal(ignoresCollision(mat), true);
+  assert.equal(ignoresCollision(sofa), false);
+  const quads = [wallQuad({ x: 0, y: 0 }, { x: 4000, y: 0 }, 240)];
+  const ids = warningIds([rug, sofa, bed, mat], quads, faces);
+  assert.equal(ids.has('rug'), false);
+  assert.equal(ids.has('mat'), false);
+  assert.equal(ids.has('sofa'), true);
+  assert.equal(ids.has('bed'), true);
+  const pair = firstOverlap([rug, mat, sofa, bed]);
+  assert.ok(pair);
+  assert.equal(pair.a.type === 'rug' || pair.b.type === 'rug', false);
+  assert.equal(pair.a.noCollide || pair.b.noCollide, undefined);
 });
 
 test('furniture back edge snaps onto the nearest wall face', () => {

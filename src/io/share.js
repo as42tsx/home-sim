@@ -15,6 +15,26 @@ import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from
 import { SHARE_MAX_BYTES } from '../model/constants.js';
 import { exportPlanJSON, importPlanJSON } from './json.js';
 
+/** Full share URLs longer than this should offer a JSON file instead. */
+export const SHARE_WARN_CHARS = 8000;
+
+/**
+ * @param {string} url
+ * @returns {{ chars: number, warn: boolean }}
+ */
+export function shareUrlStats(url) {
+  const chars = typeof url === 'string' ? url.length : 0;
+  return { chars, warn: chars > SHARE_WARN_CHARS };
+}
+
+/** Group digits with a thin space, e.g. 12345 → "12 345". */
+export function formatThousands(n) {
+  const value = Math.round(Number(n) || 0);
+  const sign = value < 0 ? '-' : '';
+  const digits = String(Math.abs(value));
+  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '\u2009');
+}
+
 /**
  * @param {object} plan
  * @param {{ baseUrl?: string, codec?: 'd'|'deflate'|'z'|'lz' }} [opts]

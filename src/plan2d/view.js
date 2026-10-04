@@ -7,7 +7,7 @@
 
 import { openingGeometry } from '../editor/opening-geom.js';
 import { pointsAttr, wallQuad } from '../editor/wall-shape.js';
-import { furnitureSymbol } from './furniture-symbols.js';
+import { furnitureSymbol, legendForType } from './furniture-symbols.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -403,7 +403,7 @@ function paintFurniture(group, list) {
   for (const entry of list) {
     const g = slot(group, entry.id, 'g');
     const item = entry.item;
-    const sig = `${entry.shape}|${item.w}|${item.d}|${item.color}|${entry.warn ? 1 : 0}|${entry.selected ? 1 : 0}`;
+    const sig = `${entry.type || ''}|${entry.shape}|${item.w}|${item.d}|${item.color}|${entry.warn ? 1 : 0}|${entry.selected ? 1 : 0}|${entry.hover ? 1 : 0}`;
     if (g.dataset.sig !== sig) {
       g.dataset.sig = sig;
       g.replaceChildren(...symbolNodes(entry));
@@ -413,6 +413,8 @@ function paintFurniture(group, list) {
 }
 
 function symbolNodes(entry) {
+  const legend = legendForType(entry.type || entry.item?.type);
+  if (legend) return legendNodes(entry, legend);
   const item = entry.item;
   const stroke = entry.warn ? 'var(--danger)' : (entry.selected ? 'var(--wall-selected)' : 'var(--ink-2)');
   const width = entry.warn || entry.selected ? 2.5 : 1.25;
@@ -451,6 +453,34 @@ function symbolNodes(entry) {
       'vector-effect': 'non-scaling-stroke',
     });
   });
+}
+
+function legendNodes(entry, legend) {
+  const item = entry.item;
+  const tone = entry.warn ? 'warn' : (entry.hover && !entry.selected ? 'hover' : '');
+  const sx = (item.w || legend.w) / legend.w;
+  const sy = (item.d || legend.d) / legend.d;
+  const g = el('g', {
+    transform: `scale(${sx} ${sy}) translate(${-legend.w / 2} ${-legend.d / 2})`,
+  });
+  let markup = legend.inner;
+  if (tone === 'hover') markup = markup.replaceAll('var(--paper-1,#fbf8f3)', 'var(--accent-tint)');
+  if (tone === 'warn') markup = markup.replaceAll('var(--paper-1,#fbf8f3)', 'var(--danger-tint)');
+  g.innerHTML = markup;
+  const nodes = [g];
+  if (entry.selected || entry.warn) {
+    nodes.push(el('rect', {
+      x: -item.w / 2,
+      y: -item.d / 2,
+      width: item.w,
+      height: item.d,
+      fill: 'none',
+      stroke: entry.warn ? 'var(--danger)' : 'var(--accent)',
+      'stroke-width': 2,
+      'vector-effect': 'non-scaling-stroke',
+    }));
+  }
+  return nodes;
 }
 
 function paintOverlay(group, model) {
@@ -515,7 +545,7 @@ function paintScreen(group, model) {
     area.setAttribute('x', at.x);
     area.setAttribute('y', at.y + 16);
     const k = camera?.k || 0;
-    const compact = label.maxX != null && labelNeedsNameOnly(label, k);
+    const compact = !!label.nameOnly || (label.maxX != null && labelNeedsNameOnly(label, k));
     area.textContent = compact ? '' : label.area;
     area.setAttribute('visibility', compact ? 'hidden' : 'visible');
   }
@@ -623,6 +653,13 @@ function paintScreen(group, model) {
 const DIM_SEG = 34;
 const DIM_ALL = 58;
 const DIM_TICK = 6;
+const DIM_TEXT = 9;
+const DIM_FONT = 11;
+
+/** Screen pixels from the outer wall face to the far side of a dimension label. */
+export function dimensionBandPx() {
+  return DIM_ALL + DIM_TEXT + Math.ceil(DIM_FONT / 2);
+}
 
 function paintExteriorDims(group, model, keep) {
   const dims = model.exteriorDims;

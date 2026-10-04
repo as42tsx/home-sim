@@ -106,8 +106,8 @@ select:focus-visible {
 }
 
 .icon-btn {
-  width: 36px;
-  height: 36px;
+  width: var(--hit-min);
+  height: var(--hit-min);
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -138,17 +138,21 @@ select:focus-visible {
 
 .seg button {
   height: 32px;
+  min-height: 32px;
   padding: 0 var(--sp-3);
   border: 0;
   border-radius: var(--r-xs);
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink-1);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
 }
 
 .seg button.is-on {
-  background: var(--paper-1);
-  color: var(--ink-1);
+  background: var(--accent-tint);
+  color: var(--accent);
   box-shadow: var(--shadow-1);
 }
 
@@ -242,7 +246,7 @@ select:focus-visible {
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink-1);
   display: grid;
   place-items: center;
 }
@@ -395,6 +399,19 @@ select:focus-visible {
   font-size: var(--fs-12);
 }
 
+.furn-mark {
+  width: 36px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.furn-mark svg {
+  width: 36px;
+  height: 28px;
+}
+
 .swatch {
   width: 14px;
   height: 14px;
@@ -432,11 +449,18 @@ select:focus-visible {
 }
 
 .warn {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
   color: var(--warn);
   background: var(--warn-tint);
   border-radius: var(--r-sm);
   padding: var(--sp-2);
   font-size: var(--fs-13);
+}
+
+.warn svg {
+  flex: none;
 }
 
 .err {
@@ -564,6 +588,17 @@ select:focus-visible {
 
 .hint {
   top: 42%;
+}
+
+.hint.is-top {
+  top: var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.hint-ico {
+  display: inline-flex;
 }
 
 .float-pill {
@@ -892,11 +927,16 @@ select:focus-visible {
 
 .tabbar button {
   height: 40px;
+  min-height: var(--hit-min);
   padding: 0 var(--sp-3);
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
 }
 
 .tabbar button.is-on {
@@ -1045,6 +1085,28 @@ body[data-sheet="2"] { --sheet-h: 100%; }
   border-radius: var(--r-pill);
   padding: 3px 10px;
   box-shadow: var(--shadow-1);
+}
+
+.banner-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.share-warn {
+  margin: var(--sp-3) 0 0;
+}
+
+.ico {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+}
+
+@media (pointer: coarse) {
+  .tool i {
+    display: none;
+  }
 }
 
 .readonly-banner {

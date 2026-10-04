@@ -1,0 +1,210 @@
+[
+ {
+  "id": "bed-double-1800",
+  "name": "双人床 1.8 m",
+  "w": 1800,
+  "d": 2000,
+  "file": "legend-modern/bed-double-1800.svg",
+  "style": "modern"
+ },
+ {
+  "id": "bed-single-1200",
+  "name": "单人床 1.2 m",
+  "w": 1200,
+  "d": 2000,
+  "file": "legend-modern/bed-single-1200.svg",
+  "style": "modern"
+ },
+ {
+  "id": "nightstand",
+  "name": "床头柜",
+  "w": 450,
+  "d": 400,
+  "file": "legend-modern/nightstand.svg",
+  "style": "modern"
+ },
+ {
+  "id": "wardrobe-2000",
+  "name": "衣柜",
+  "w": 2000,
+  "d": 600,
+  "file": "legend-modern/wardrobe-2000.svg",
+  "style": "modern"
+ },
+ {
+  "id": "sofa-3",
+  "name": "三人沙发",
+  "w": 2100,
+  "d": 900,
+  "file": "legend-modern/sofa-3.svg",
+  "style": "modern"
+ },
+ {
+  "id": "sofa-L",
+  "name": "L 形沙发",
+  "w": 2600,
+  "d": 1600,
+  "file": "legend-modern/sofa-L.svg",
+  "style": "modern"
+ },
+ {
+  "id": "armchair",
+  "name": "单人沙发",
+  "w": 800,
+  "d": 800,
+  "file": "legend-modern/armchair.svg",
+  "style": "modern"
+ },
+ {
+  "id": "coffee-table",
+  "name": "茶几",
+  "w": 1200,
+  "d": 600,
+  "file": "legend-modern/coffee-table.svg",
+  "style": "modern"
+ },
+ {
+  "id": "tv-unit",
+  "name": "电视柜",
+  "w": 1800,
+  "d": 400,
+  "file": "legend-modern/tv-unit.svg",
+  "style": "modern"
+ },
+ {
+  "id": "dining-4",
+  "name": "四人餐桌",
+  "w": 1200,
+  "d": 800,
+  "file": "legend-modern/dining-4.svg",
+  "style": "modern"
+ },
+ {
+  "id": "dining-4-set",
+  "name": "四人餐桌（含椅组合）",
+  "w": 1950,
+  "d": 1700,
+  "file": "legend-modern/dining-4-set.svg",
+  "style": "modern"
+ },
+ {
+  "id": "dining-round",
+  "name": "圆餐桌 Ø900",
+  "w": 900,
+  "d": 900,
+  "file": "legend-modern/dining-round.svg",
+  "style": "modern"
+ },
+ {
+  "id": "chair",
+  "name": "餐椅",
+  "w": 450,
+  "d": 450,
+  "file": "legend-modern/chair.svg",
+  "style": "modern"
+ },
+ {
+  "id": "desk",
+  "name": "书桌",
+  "w": 1200,
+  "d": 600,
+  "file": "legend-modern/desk.svg",
+  "style": "modern"
+ },
+ {
+  "id": "bookshelf",
+  "name": "书架",
+  "w": 900,
+  "d": 300,
+  "file": "legend-modern/bookshelf.svg",
+  "style": "modern"
+ },
+ {
+  "id": "kitchen-counter",
+  "name": "一字橱柜（水槽 + 灶）",
+  "w": 2400,
+  "d": 600,
+  "file": "legend-modern/kitchen-counter.svg",
+  "style": "modern"
+ },
+ {
+  "id": "fridge",
+  "name": "冰箱",
+  "w": 700,
+  "d": 700,
+  "file": "legend-modern/fridge.svg",
+  "style": "modern"
+ },
+ {
+  "id": "toilet",
+  "name": "马桶",
+  "w": 400,
+  "d": 700,
+  "file": "legend-modern/toilet.svg",
+  "style": "modern"
+ },
+ {
+  "id": "basin",
+  "name": "台盆",
+  "w": 600,
+  "d": 450,
+  "file": "legend-modern/basin.svg",
+  "style": "modern"
+ },
+ {
+  "id": "shower",
+  "name": "淋浴 900",
+  "w": 900,
+  "d": 900,
+  "file": "legend-modern/shower.svg",
+  "style": "modern"
+ },
+ {
+  "id": "bathtub",
+  "name": "浴缸",
+  "w": 1700,
+  "d": 750,
+  "file": "legend-modern/bathtub.svg",
+  "style": "modern"
+ },
+ {
+  "id": "washer",
+  "name": "洗衣机",
+  "w": 600,
+  "d": 600,
+  "file": "legend-modern/washer.svg",
+  "style": "modern"
+ },
+ {
+  "id": "rug",
+  "name": "地毯",
+  "w": 2000,
+  "d": 1400,
+  "file": "legend-modern/rug.svg",
+  "style": "modern"
+ },
+ {
+  "id": "office-chair",
+  "name": "办公椅",
+  "w": 600,
+  "d": 600,
+  "file": "legend-modern/office-chair.svg",
+  "style": "modern"
+ },
+ {
+  "id": "floor-lamp",
+  "name": "落地灯",
+  "w": 400,
+  "d": 400,
+  "file": "legend-modern/floor-lamp.svg",
+  "style": "modern"
+ },
+ {
+  "id": "plant",
+  "name": "绿植",
+  "w": 500,
+  "d": 500,
+  "file": "legend-modern/plant.svg",
+  "style": "modern"
+ }
+]

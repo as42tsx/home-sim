@@ -5,8 +5,12 @@ import {
   estimateUsage,
   readIndex,
   readLastId,
+  deletePlanWithUndo,
+  dropDeleted,
+  planKey,
   readPlan,
   removePlan,
+  restoreDeleted,
   sortPlans,
   writePlan,
 } from '../src/store/local.js';
@@ -69,4 +73,33 @@ test('usage above 80% warns and a failed write is reported', () => {
   const failed = writePlan(storage, plan, { quota: 5_000_000 });
   assert.equal(failed.ok, false);
   assert.equal(failed.error.name, 'QuotaExceededError');
+});
+
+test('delete keeps a tombstone that restores the plan bytes, index entry, and last id', () => {
+  const storage = memoryStorage();
+  const plan = createEmptyPlan({ now: 10, id: 'keep', name: '持久方案', floorId: 'f1' });
+  plan.meta.updatedAt = 10;
+  plan.meta.template = 'apt-2br';
+  assert.equal(writePlan(storage, plan).ok, true);
+  const raw = storage.getItem(planKey('keep'));
+  const removed = deletePlanWithUndo(storage, 'keep', { wasOpen: true });
+  assert.equal(readPlan(storage, 'keep'), null);
+  assert.equal(readLastId(storage), null);
+  assert.equal(readIndex(storage).some((item) => item.id === 'keep'), false);
+  assert.equal(removed.wasLast, true);
+  assert.equal(removed.wasOpen, true);
+  assert.equal(removed.indexEntry.name, '持久方案');
+  assert.equal(removed.indexEntry.template, 'apt-2br');
+  const back = restoreDeleted(storage);
+  assert.equal(back.plan.meta.name, '持久方案');
+  assert.equal(storage.getItem(planKey('keep')), raw);
+  assert.equal(readLastId(storage), 'keep');
+  const entry = readIndex(storage).find((item) => item.id === 'keep');
+  assert.equal(entry.updatedAt, 10);
+  assert.equal(entry.template, 'apt-2br');
+  assert.equal(restoreDeleted(storage), null);
+  deletePlanWithUndo(storage, 'keep', { wasOpen: false });
+  dropDeleted();
+  assert.equal(restoreDeleted(storage), null);
+  assert.equal(readPlan(storage, 'keep'), null);
 });

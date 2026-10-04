@@ -8,7 +8,7 @@
 import { suiteNetM2, aboutNetM2, planNetM2 } from '../editor/area.js';
 import { shouldCloseChain, segmentTooShort } from '../editor/chain.js';
 import { clonePlanFresh } from '../editor/clone.js';
-import { warningIds } from '../editor/collision.js';
+import { firstOverlap, overlapPartners, warningIds } from '../editor/collision.js';
 import {
   bakeCommand,
   furnitureAddCommand,
@@ -33,23 +33,28 @@ import { angleDeg, escapeHtml, formatAngle, formatAreaM2, formatAreaMm2, formatM
 import { snapFurnitureToWall } from '../editor/furniture-snap.js';
 import { hitTest, rotateHandlePoint } from '../editor/hit.js';
 import { MATERIALS, ROOM_TYPES, roomFillVar } from '../editor/materials.js';
+import { openingGeometry } from '../editor/opening-geom.js';
 import { previewOpening } from '../editor/opening-preview.js';
 import { resolveSnap } from '../editor/snap.js';
 import { createEditorStore } from '../editor/store.js';
 import { patchWall, updateOpening } from '../editor/structure.js';
 import { roomThumbModel, thumbView } from '../editor/thumb.js';
 import { wallQuad } from '../editor/wall-shape.js';
+import { pointInPolygon } from '../geometry/polygon.js';
+import { ICONS } from '../assets/icons.js';
 import { CATALOG, catalogCategories, catalogEntry } from '../furniture/catalog.js';
 import { formatMessage, loadLocale } from '../i18n/index.js';
 import { exportPlanJSON, importPlanJSON } from '../io/json.js';
 import { PNG_LONG_EDGE } from '../io/png-fit.js';
-import { decodeShareLink, encodeShareLink } from '../io/share.js';
+import { decodeShareLink, encodeShareLink, formatThousands, shareUrlStats } from '../io/share.js';
 import { WALL_THICKNESS } from '../model/constants.js';
 import { createEmptyPlan, floorBelow, floorsByElevation, getFloor } from '../model/document.js';
 import { uniqueId } from '../model/ids.js';
 import { validatePlan } from '../model/validate.js';
 import { checkOpeningPlacement, openingClearance } from '../openings/clearance.js';
-import { mountPlanView } from '../plan2d/view.js';
+import { legendForType } from '../plan2d/furniture-symbols.js';
+import { placeRoomLabel, swingSectorBBox } from '../plan2d/label-place.js';
+import { dimensionBandPx, mountPlanView } from '../plan2d/view.js';
 import { renderPlanPng } from './png-2d.js';
 import { deriveRooms } from '../rooms/index.js';
 import {
@@ -57,13 +62,16 @@ import {
   readIndex,
   readLastId,
   readPlan,
+  deletePlanWithUndo,
+  dropDeleted,
   readPrefs,
-  removePlan,
   renameStored,
+  restoreDeleted,
   sortPlans,
   writePlan,
   writePrefs,
 } from '../store/index.js';
+import { logIssue, messageKeyForCode } from './issues.js';
 
 const CAT_KEYS = {
   卧室: 'cat.bed',
@@ -73,6 +81,18 @@ const CAT_KEYS = {
   厨房: 'cat.kitchen',
   卫浴: 'cat.bath',
   装饰: 'cat.decor',
+};
+
+const TOOL_ICON = {
+  select: 'select',
+  wall: 'wall',
+  room: 'room',
+  door: 'door',
+  window: 'window',
+  demolish: 'demolish',
+  measure: 'measure',
+  pan: 'pan',
+  library: 'sofa',
 };
 
 const TOOL_KEYS = {
@@ -132,6 +152,8 @@ const state = {
   hintTimer: 0,
   pillTimer: 0,
   toastTimer: 0,
+  deleteUndoTimer: 0,
+  overlapNoted: false,
   view3d: null,
   view3dMod: null,
   view3dBusy: false,
@@ -218,15 +240,15 @@ function ensureChrome() {
       <div class="menu" data-menu="plan" hidden></div>
     </div>
     <div class="seg" role="tablist">
-      <button type="button" data-mode="plan" data-i18n="mode.plan">户型</button>
-      <button type="button" data-mode="furnish" data-i18n="mode.furnish">布置</button>
-      <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>
+      <button type="button" data-mode="plan"><span class="ico">${iconSvg('plan', 16)}</span><span data-i18n="mode.plan">户型</span></button>
+      <button type="button" data-mode="furnish"><span class="ico">${iconSvg('sofa', 16)}</span><span data-i18n="mode.furnish">布置</span></button>
+      <button type="button" data-mode="view3d"><span class="ico">${iconSvg('cube', 16)}</span><span data-i18n="mode.view3d">3D</span></button>
     </div>
-    <button type="button" class="icon-btn" data-action="undo" data-i18n-title="action.undo" aria-label="撤销">↩</button>
-    <button type="button" class="icon-btn" data-action="redo" data-i18n-title="action.redo" aria-label="重做">↪</button>
-    <button type="button" class="btn" data-action="share"><span data-i18n="action.share">分享</span></button>
+    <button type="button" class="icon-btn" data-action="undo" data-i18n-title="action.undo" aria-label="撤销">${iconSvg('undo', 20)}</button>
+    <button type="button" class="icon-btn" data-action="redo" data-i18n-title="action.redo" aria-label="重做">${iconSvg('redo', 20)}</button>
+    <button type="button" class="btn" data-action="share"><span class="ico">${iconSvg('share', 16)}</span><span data-i18n="action.share">分享</span></button>
     <div class="menu-wrap">
-      <button type="button" class="btn" data-menu-button="file" data-action="file-menu"><span data-i18n="action.file">文件</span></button>
+      <button type="button" class="btn" data-menu-button="file" data-action="file-menu"><span class="ico">${iconSvg('export', 16)}</span><span data-i18n="action.file">文件</span></button>
       <div class="menu right" data-menu="file" hidden>
         <button type="button" class="item" data-action="export-json"><span data-i18n="action.exportJson">导出 JSON</span></button>
         <button type="button" class="item" data-action="import-json"><span data-i18n="action.importJson">导入 JSON</span></button>
@@ -236,12 +258,12 @@ function ensureChrome() {
     <button type="button" class="btn ghost" data-action="lang" data-i18n="action.lang">中 / EN</button>
     <span class="top-spacer"></span>
     <button type="button" class="btn inspector-toggle" data-action="inspector" data-i18n="action.inspector">属性</button>
-    <button type="button" class="btn primary" data-action="view3d"><span data-i18n="action.view3d">看 3D</span></button>`;
+    <button type="button" class="btn primary" data-action="view3d"><span class="ico">${iconSvg('cube', 16)}</span><span data-i18n="action.view3d">看 3D</span></button>`;
 
   ui.tools.innerHTML = ['select', 'wall', 'room', 'door', 'window', 'demolish', 'measure', 'pan', 'library']
     .map((name) => {
       const key = TOOL_KEYS[name];
-      return `<button type="button" class="tool" data-tool="${name}">${toolIcon(name)}${key ? `<i>${key}</i>` : ''}</button>`;
+      return `<button type="button" class="tool" data-tool="${name}">${iconSvg(TOOL_ICON[name] || 'select', 22)}${key ? `<i>${key}</i>` : ''}</button>`;
     })
     .join('');
 
@@ -254,10 +276,10 @@ function ensureChrome() {
     <span data-save></span>`;
 
   ui.tabs.innerHTML = `
-    <button type="button" data-mode="plan" data-i18n="mode.plan">户型</button>
-    <button type="button" data-mode="furnish" data-i18n="mode.furnish">布置</button>
-    <button type="button" data-mode="view3d" data-i18n="mode.view3d">3D</button>
-    <button type="button" data-action="more-menu" data-i18n="action.more">更多</button>
+    <button type="button" data-mode="plan"><span class="ico">${iconSvg('plan', 18)}</span><span data-i18n="mode.plan">户型</span></button>
+    <button type="button" data-mode="furnish"><span class="ico">${iconSvg('sofa', 18)}</span><span data-i18n="mode.furnish">布置</span></button>
+    <button type="button" data-mode="view3d"><span class="ico">${iconSvg('cube', 18)}</span><span data-i18n="mode.view3d">3D</span></button>
+    <button type="button" data-action="more-menu"><span class="ico">${iconSvg('more', 18)}</span><span data-i18n="action.more">更多</span></button>
     <button type="button" data-action="save-copy" data-readonly-tab hidden data-i18n="share.saveShort">保存</button>
     <div class="menu up" data-menu="more" hidden>
       <button type="button" class="item" data-action="share"><span data-i18n="action.share">分享</span></button>
@@ -282,7 +304,7 @@ function ensureChrome() {
     <div class="hud-row">
       <div class="hud-seg" role="group">
         <button type="button" data-action="bird" data-testid="hud-bird" aria-pressed="true"><span data-i18n="action.bird">鸟瞰</span></button>
-        <button type="button" data-action="walk" data-testid="hud-walk" aria-pressed="false"><span data-i18n="action.walk">漫游</span></button>
+        <button type="button" data-action="walk" data-testid="hud-walk" aria-pressed="false"><span class="ico">${iconSvg('walk', 16)}</span><span data-i18n="action.walk">漫游</span></button>
         <button type="button" data-action="cutaway" data-testid="hud-cutaway" aria-pressed="false"><span data-i18n="action.cutaway">剖切墙</span></button>
       </div>
       <button type="button" class="btn hud-reset" data-action="reset-view" data-testid="hud-reset" data-i18n-title="action.resetView" aria-label="复位"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.2-5.5"/><path d="M4 4v5h5"/></svg></button>
@@ -292,7 +314,7 @@ function ensureChrome() {
   ui.readout.dataset.testid = 'readonly-banner';
   ui.readout.hidden = true;
   ui.readout.innerHTML = `
-    <span data-i18n="share.banner">只读查看 ·</span>
+    <span class="banner-note">${iconSvg('eye', 18)}<span data-i18n="share.banner">只读查看 ·</span></span>
     <button type="button" class="btn primary" data-action="save-copy" data-testid="save-copy"><span data-i18n="share.save">保存到我的方案</span></button>`;
   ui.sheet = ensureDiv('sheet', 'data-sheet');
   ui.sheet.dataset.testid = 'sheet';
@@ -312,10 +334,10 @@ function ensureChrome() {
   ui.fab.dataset.testid = 'fab';
   ui.fab.hidden = true;
   ui.fab.innerHTML = `
-    <button type="button" data-action="rotate-selection" data-i18n="action.rotate">旋转</button>
-    <button type="button" data-action="duplicate-selection" data-i18n="action.copy">复制</button>
-    <button type="button" data-action="delete-selection" data-i18n="inspector.delete">删除</button>
-    <button type="button" data-action="sheet-props" data-i18n="action.props">属性</button>`;
+    <button type="button" data-action="rotate-selection" data-i18n-aria="action.rotate" aria-label="旋转">${iconSvg('rotate', 20)}</button>
+    <button type="button" data-action="duplicate-selection" data-i18n-aria="action.copy" aria-label="复制">${iconSvg('copy', 20)}</button>
+    <button type="button" data-action="delete-selection" data-i18n-aria="inspector.delete" aria-label="删除">${iconSvg('trash', 20)}</button>
+    <button type="button" data-action="sheet-props" data-i18n-aria="action.props" aria-label="属性">${iconSvg('more', 20)}</button>`;
   state.layout = layoutName();
   document.body.dataset.mode = state.mode;
   document.body.dataset.sheet = '0';
@@ -397,7 +419,7 @@ function paint3dButton() {
   const in3d = state.mode === 'view3d';
   const label = loading ? t('view3d.loading') : in3d ? t('action.to2d') : t('action.view3d');
   for (const button of document.querySelectorAll('[data-action="view3d"]')) {
-    const span = button.querySelector('span');
+    const span = button.querySelector('[data-i18n]');
     if (span) span.textContent = label;
     button.disabled = loading || (blocked && !in3d);
     if (blocked) button.title = state.webgl.reason || t('view3d.unavailable');
@@ -577,6 +599,7 @@ function pngModel() {
     furniture = (floor.furniture || []).map((item) => ({
       item,
       shape: shapeOf(item),
+      type: item.type,
       warn: warns.has(item.id),
     }));
   }
@@ -586,7 +609,7 @@ function pngModel() {
     walls: drawn.walls,
     openings: drawn.openings,
     furniture,
-    labels: drawn.labels,
+    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera?.k || 0.05),
   };
 }
 
@@ -643,11 +666,13 @@ async function openShareDialog() {
   let encoded;
   try {
     encoded = await encodeShareLink(plan, { baseUrl });
-  } catch {
+  } catch (err) {
+    logIssue('SHARE_ENCODE', err && err.name);
     toast(t('share.incomplete'), 'danger');
     return;
   }
   if (!encoded.ok) {
+    logIssue(encoded.code || 'TOO_LONG', encoded.bytes);
     const kb = (encoded.bytes / 1024).toFixed(1);
     const ok = await showModal({
       title: t('share.tooBigTitle'),
@@ -658,19 +683,24 @@ async function openShareDialog() {
     if (ok) exportJSON();
     return;
   }
-  const kb = (encoded.bytes / 1024).toFixed(1);
+  const stats = shareUrlStats(encoded.url);
+  const warn = stats.warn
+    ? `<p class="warn share-warn" data-testid="share-warn">${iconSvg('warning', 16)}<span>${escapeHtml(t('share.warnLong'))}</span></p>`
+    : '';
   ui.modals.innerHTML = `
     <div class="modal-mask">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-title">
         <h3 id="share-title">${escapeHtml(t('share.title'))}</h3>
         <div class="modal-body">
-          <p class="formula" data-testid="share-size">${escapeHtml(t('share.size', { kb }))}</p>
+          <p class="formula" data-testid="share-size">${escapeHtml(t('share.chars', { n: formatThousands(stats.chars) }))}</p>
           <input class="share-link" data-testid="share-link" readonly value="${escapeHtml(encoded.url)}" />
         </div>
         <div class="modal-actions">
           <button type="button" class="btn" data-action="share-close">${escapeHtml(t('share.close'))}</button>
-          <button type="button" class="btn primary" data-action="copy-share">${escapeHtml(t('share.copy'))}</button>
+          <button type="button" class="btn${stats.warn ? '' : ' primary'}" data-action="copy-share">${escapeHtml(t('share.copy'))}</button>
+          ${stats.warn ? `<button type="button" class="btn primary" data-action="share-export-json">${escapeHtml(t('action.exportJson'))}</button>` : ''}
         </div>
+        ${warn}
       </div>
     </div>`;
   modalResolver = () => {};
@@ -708,6 +738,7 @@ async function onHashChange() {
   if (!hash.startsWith('#p=')) return;
   const decoded = await decodeShareLink(hash);
   if (!decoded.ok) {
+    logIssue(decoded.code || 'LINK_INCOMPLETE');
     toast(t('share.incomplete'), 'warn', null, 4000);
     return;
   }
@@ -754,20 +785,10 @@ function openHelp() {
   });
 }
 
-function toolIcon(name) {
-  const common = 'viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"';
-  const paths = {
-    select: '<path d="M5 4l6 16 2.2-6.2L19 12z"/>',
-    wall: '<path d="M4 16l8-8 8 8"/><path d="M8 16h8"/>',
-    room: '<rect x="5" y="5" width="14" height="14" rx="1"/>',
-    door: '<path d="M8 19V6h8v13"/><path d="M8 19a8 8 0 0 1 8-8"/>',
-    window: '<path d="M4 8h16M4 12h16M4 16h16"/>',
-    demolish: '<path d="M5 17h14" stroke-dasharray="2 2"/><path d="M8 7l8 8M16 7l-8 8"/>',
-    measure: '<path d="M5 19L19 5"/><path d="M7 17l-2 2M17 7l2-2"/>',
-    pan: '<path d="M12 4v16M4 12h16M12 4l-2 2M12 4l2 2M12 20l-2-2M12 20l2-2M4 12l2-2M4 12l2 2M20 12l-2-2M20 12l-2 2"/>',
-    library: '<rect x="4" y="4" width="7" height="7"/><rect x="13" y="4" width="7" height="7"/><rect x="4" y="13" width="7" height="7"/><rect x="13" y="13" width="7" height="7"/>',
-  };
-  return `<svg ${common}>${paths[name] || ''}</svg>`;
+function iconSvg(name, size = 22) {
+  const raw = ICONS[name];
+  if (!raw) return '';
+  return raw.replace('width="24"', `width="${size}"`).replace('height="24"', `height="${size}"`);
 }
 
 function bindDebug() {
@@ -859,6 +880,7 @@ async function boot() {
     const decoded = await decodeShareLink(hash);
     if (decoded.ok) enterShared(decoded.plan);
     else {
+      logIssue(decoded.code || 'LINK_INCOMPLETE');
       toast(t('share.incomplete'), 'warn', null, 4000);
       openLocalOrPicker();
     }
@@ -984,6 +1006,7 @@ function renderAll() {
 function renderStatic() {
   for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
   for (const node of document.querySelectorAll('[data-i18n-title]')) node.title = t(node.dataset.i18nTitle);
+  for (const node of document.querySelectorAll('[data-i18n-aria]')) node.setAttribute('aria-label', t(node.dataset.i18nAria));
   const bannerText = ui.banner.querySelector('[data-banner-text]');
   if (!bannerText && ui.banner.childElementCount === 0) {
     ui.banner.innerHTML = `
@@ -1077,7 +1100,9 @@ function renderTools() {
     button.hidden = state.mode === 'view3d' ? true : !allow.includes(name);
     button.classList.toggle('is-on', name === state.tool && state.mode !== 'view3d');
     const label = t(name === 'library' ? 'tool.library' : `tool.${name}`);
-    button.title = TOOL_KEYS[name] ? `${label} (${TOOL_KEYS[name]})` : label;
+    const touch = touchHud();
+    button.title = !touch && TOOL_KEYS[name] ? `${label} (${TOOL_KEYS[name]})` : label;
+    button.setAttribute('aria-label', label);
   }
 }
 
@@ -1086,7 +1111,10 @@ function renderModes() {
   document.body.classList.toggle('is-readonly', !!state.readOnly);
   for (const button of document.querySelectorAll('button[data-mode]')) {
     button.classList.toggle('is-on', button.dataset.mode === state.mode);
-    if (button.dataset.mode === 'plan') button.textContent = state.readOnly ? t('mode.view2d') : t('mode.plan');
+    if (button.dataset.mode === 'plan') {
+      const label = button.querySelector('[data-i18n]');
+      if (label) label.textContent = state.readOnly ? t('mode.view2d') : t('mode.plan');
+    }
     if (button.dataset.mode === 'furnish') button.hidden = !!state.readOnly;
   }
   const more = document.querySelector('[data-action="more-menu"]');
@@ -1251,9 +1279,9 @@ function catalogHTML() {
   const groups = catalogCategories().map((category) => {
     const key = CAT_KEYS[category] || '';
     const items = CATALOG.filter((item) => item.category === category).map((item) => {
-      const name = state.prefs.lang === 'en' ? item.nameEn : item.name;
+      const name = furnName(item);
       return `<button type="button" class="furn-item" data-furn="${escapeHtml(item.type)}" data-name="${escapeHtml(`${item.name} ${item.nameEn}`)}">
-        <span class="swatch" style="background:${escapeHtml(item.color)}"></span>
+        ${legendThumb(item)}
         <span>${escapeHtml(name)}</span>
         <small>${item.w}×${item.d}</small>
       </button>`;
@@ -1264,6 +1292,18 @@ function catalogHTML() {
     <h2 class="panel-title">${escapeHtml(t('tool.library'))}</h2>
     <input class="search" data-search placeholder="${escapeHtml(t('furn.search'))}" />
     ${groups}`;
+}
+
+function furnName(item) {
+  const key = `furn.type.${item.type}`;
+  if (state.messages && Object.prototype.hasOwnProperty.call(state.messages, key)) return t(key);
+  return state.prefs?.lang === 'en' ? item.nameEn : item.name;
+}
+
+function legendThumb(item) {
+  const legend = legendForType(item.type);
+  if (!legend) return `<span class="swatch" style="background:${escapeHtml(item.color)}"></span>`;
+  return `<span class="furn-mark"><svg viewBox="${escapeHtml(legend.viewBox)}" aria-hidden="true">${legend.inner}</svg></span>`;
 }
 
 function inspectorHTML() {
@@ -1423,7 +1463,12 @@ function furnitureInspector() {
     <div class="field"><label>${escapeHtml(label)}</label>
       <input type="number" data-field="${field}" min="50" max="6000" value="${value}" />
     </div>`;
+  const partners = overlapPartners(floor.furniture, item.id);
+  const warn = partners.length
+    ? `<p class="warn">${iconSvg('warning', 16)}<span>${escapeHtml(t('collision.inspector', { name: furnLabel(partners[0]) }))}</span></p>`
+    : '';
   return `<h2 class="panel-title">${escapeHtml(t('inspector.furniture'))}</h2>
+    ${warn}
     <div class="field"><label>${escapeHtml(t('furn.name'))}</label>
       <input data-field="furn-name" value="${escapeHtml(item.name)}" />
     </div>
@@ -1442,6 +1487,7 @@ function renderCanvas() {
   const model = buildModel();
   view.render(model);
   renderFab();
+  noteOverlap(model.overlap);
 }
 
 function buildModel() {
@@ -1505,13 +1551,28 @@ function buildModel() {
     quads.push(wallQuad(a, b, wall.thickness, false));
   }
   const warns = warningIds(floor.furniture || [], quads, live.derived || []);
+  let hoverId = '';
+  if (state.hoverWorld) {
+    const hit = hitTest({
+      floor,
+      derived: live,
+      world: state.hoverWorld,
+      pxPerMm: state.camera.k,
+      selection: state.selection,
+      mode: state.mode === 'furnish' ? 'furnish' : 'plan',
+    });
+    if (hit?.kind === 'furniture') hoverId = hit.id;
+  }
   const furniture = (floor.furniture || []).map((item) => ({
     id: item.id,
     item,
+    type: item.type,
     shape: shapeOf(item),
     warn: warns.has(item.id),
+    hover: hoverId === item.id,
     selected: state.selection?.kind === 'furniture' && state.selection.id === item.id,
   }));
+  const overlap = firstOverlap(floor.furniture || []);
   const bubbles = [];
   if (state.chain && state.snap && state.snap.length != null && state.tool === 'wall') {
     const origin = state.chain.points[state.chain.points.length - 1];
@@ -1597,7 +1658,8 @@ function buildModel() {
     walls: drawn.walls,
     openings: drawn.openings,
     furniture,
-    labels: drawn.labels,
+    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera.k),
+    overlap,
     handles,
     guides: state.snap?.guides || [],
     bubbles,
@@ -1619,6 +1681,55 @@ function entryMarkFor(floor) {
 
 function shapeOf(item) {
   return catalogEntry(item.type)?.shape || 'box';
+}
+
+function textPx(text, size) {
+  let width = 0;
+  for (const ch of text || '') width += ch.charCodeAt(0) > 255 ? size : size * 0.6;
+  return width;
+}
+
+function layoutLabels(labels, rooms, openings, k) {
+  return (labels || []).map((label) => {
+    const room = (rooms || []).find((item) => item.id === label.id);
+    if (!room?.points || room.points.length < 3) return label;
+    const swings = [];
+    for (const item of openings || []) {
+      const opening = item.opening;
+      if (!opening || item.preview || opening.kind === 'window' || opening.kind === 'slide') continue;
+      const geom = openingGeometry(item.a, item.b, opening);
+      const mid = {
+        x: geom.hinge.x + geom.normal.x * (opening.width || 0) * 0.55,
+        y: geom.hinge.y + geom.normal.y * (opening.width || 0) * 0.55,
+      };
+      if (!pointInPolygon(mid, room.points)) continue;
+      swings.push(swingSectorBBox(geom.hinge, geom.jamb, geom.leaf));
+    }
+    const placed = placeRoomLabel({
+      polygon: room.points,
+      at: { x: label.x, y: label.y },
+      swings,
+      boxW: Math.max(textPx(label.name, 13), textPx(label.area, 12)) + 6,
+      boxH: 32,
+      nameH: 16,
+      k: k || 0.05,
+    });
+    return { ...label, x: placed.x, y: placed.y, nameOnly: placed.nameOnly };
+  });
+}
+
+function furnLabel(item) {
+  if (!item) return '';
+  if (item.name) return item.name;
+  const entry = catalogEntry(item.type);
+  if (!entry) return '';
+  return state.prefs?.lang === 'en' ? entry.nameEn : entry.name;
+}
+
+function noteOverlap(pair) {
+  if (state.overlapNoted || !pair) return;
+  state.overlapNoted = true;
+  showHint(t('collision.hint', { a: furnLabel(pair.a), b: furnLabel(pair.b) }), { top: true, icon: 'warning' });
 }
 
 function floorGraphics(floor, derived, opts) {
@@ -1793,12 +1904,25 @@ function fitCamera() {
       maxY = Math.max(maxY, point.y);
     }
     if (frame) {
-      const availW = frame.right - frame.left;
-      const availH = frame.bottom - frame.top;
-      const k = Math.min(availW / Math.max(1, maxX - minX), availH / Math.max(1, maxY - minY));
-      state.camera.k = Math.max(0.002, Math.min(2, k));
-      state.camera.x = frame.left + (availW - (minX + maxX) * state.camera.k) / 2;
-      state.camera.y = frame.top + (availH - (minY + maxY) * state.camera.k) / 2;
+      const spanW = Math.max(1, maxX - minX);
+      const spanH = Math.max(1, maxY - minY);
+      const band = dimensionBandPx();
+      const faceMm = 120;
+      const measure = (extra) => {
+        const availW = Math.max(48, frame.right - frame.left - extra);
+        const availH = Math.max(48, frame.bottom - frame.top - extra);
+        return {
+          extra,
+          availW,
+          availH,
+          k: Math.min(availW / spanW, availH / spanH),
+        };
+      };
+      let fit = measure(band);
+      fit = measure(band + faceMm * fit.k);
+      state.camera.k = Math.max(0.002, Math.min(2, fit.k));
+      state.camera.x = frame.left + fit.extra + (fit.availW - (minX + maxX) * state.camera.k) / 2;
+      state.camera.y = frame.top + fit.extra + (fit.availH - (minY + maxY) * state.camera.k) / 2;
     } else {
       const pad = 80;
       const k = Math.min((size.w - pad * 2) / Math.max(1, maxX - minX), (size.h - pad * 2) / Math.max(1, maxY - minY));
@@ -2841,6 +2965,7 @@ function closeModal(ok) {
 function onClick(event) {
   if (modalResolver) {
     if (event.target.closest('[data-action="copy-share"]')) { void copyShareField(); return; }
+    if (event.target.closest('[data-action="share-export-json"]')) { exportJSON(); return; }
     if (event.target.closest('[data-action="share-close"]')) { closeModal(false); return; }
     if (event.target.closest('[data-action="modal-ok"]')) { closeModal(true); return; }
     if (event.target.closest('[data-action="modal-cancel"]')) { closeModal(false); return; }
@@ -3167,12 +3292,31 @@ function openRecent() {
   if (id) openStored(id);
 }
 
+function showIssues(errors, tone = 'danger') {
+  const list = (errors || []).filter(Boolean);
+  if (!list.length) {
+    logIssue('UNKNOWN');
+    toast(t('error.generic'), tone);
+    return;
+  }
+  const seen = new Set();
+  const parts = [];
+  for (const item of list) {
+    logIssue(item.code || 'UNKNOWN', item.path || '');
+    const key = messageKeyForCode(item.code);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(t(key));
+  }
+  toast(parts.join('；') || t('error.generic'), tone);
+}
+
 function openStored(id) {
   const plan = readPlan(storage, id);
   if (!plan) return;
   const errors = validatePlan(plan).filter((item) => item.severity !== 'warning');
   if (errors.length) {
-    toast(errors.map((item) => item.message).join('；'), 'danger');
+    showIssues(errors);
     return;
   }
   adopt(plan, { save: false, arm: true });
@@ -3215,20 +3359,38 @@ async function deletePlan(id) {
     danger: true,
   });
   if (!ok) return;
-  removePlan(storage, id);
-  if (state.store?.getPlan()?.meta?.id !== id) return;
-  const rest = sortPlans(readIndex(storage));
-  if (rest.length) {
-    const next = readPlan(storage, rest[0].id);
-    if (next) adopt(next, { save: false, arm: true });
-    else {
+  const wasOpen = state.store?.getPlan()?.meta?.id === id;
+  const removed = deletePlanWithUndo(storage, id, { wasOpen });
+  const name = removed?.plan?.meta?.name || removed?.indexEntry?.name || '';
+  if (wasOpen) {
+    const rest = sortPlans(readIndex(storage));
+    if (rest.length) {
+      const next = readPlan(storage, rest[0].id);
+      if (next) adopt(next, { save: false, arm: true });
+      else {
+        state.armed = false;
+        void showPicker();
+      }
+    } else {
       state.armed = false;
       void showPicker();
     }
-  } else {
-    state.armed = false;
-    void showPicker();
   }
+  window.clearTimeout(state.deleteUndoTimer);
+  state.deleteUndoTimer = window.setTimeout(() => {
+    dropDeleted();
+    state.deleteUndoTimer = 0;
+  }, 10000);
+  toast(t('plan.deleted', { name }), '', { label: t('plan.undo'), run: undoDeletePlan }, 10000);
+}
+
+function undoDeletePlan() {
+  window.clearTimeout(state.deleteUndoTimer);
+  state.deleteUndoTimer = 0;
+  const saved = restoreDeleted(storage);
+  if (!saved?.plan) return;
+  if (saved.wasOpen) adopt(saved.plan, { save: false, arm: true, readOnly: false });
+  else if (ui.picker && !ui.picker.hidden) renderPicker();
 }
 
 async function importFile(file) {
@@ -3240,7 +3402,7 @@ async function importFile(file) {
   try { text = await file.text(); } catch { toast(t('toast.saveFail'), 'danger'); return; }
   const result = importPlanJSON(text);
   if (!result.ok) {
-    toast(result.errors.map((item) => item.message).filter(Boolean).join('；'), 'danger');
+    showIssues(result.errors);
     return;
   }
   adopt(result.plan, { save: true, arm: true, multiToast: true });
@@ -3304,7 +3466,7 @@ function loadRemote() {
   if (!other) return;
   const errors = validatePlan(other).filter((item) => item.severity !== 'warning');
   if (errors.length) {
-    toast(errors.map((item) => item.message).join('；'), 'danger');
+    showIssues(errors);
     return;
   }
   adopt(other, { save: false, arm: true });
@@ -3432,6 +3594,7 @@ function toast(text, tone = '', action = null, ms = 2600) {
   if (action) {
     const button = document.createElement('button');
     button.type = 'button';
+    button.dataset.testid = 'toast-action';
     button.textContent = action.label;
     button.addEventListener('click', () => action.run());
     node.append(button);
@@ -3445,10 +3608,17 @@ function toast(text, tone = '', action = null, ms = 2600) {
   }
 }
 
-function showHint(text) {
+function showHint(text, opts = {}) {
+  const options = opts && typeof opts === 'object' ? opts : {};
   ui.hint.hidden = false;
   ui.hint.classList.remove('is-hide');
-  ui.hint.textContent = text;
+  ui.hint.classList.toggle('is-top', !!options.top);
+  if (options.icon) {
+    ui.hint.innerHTML = `<span class="hint-ico">${iconSvg(options.icon, 16)}</span><span></span>`;
+    ui.hint.lastElementChild.textContent = text;
+  } else {
+    ui.hint.textContent = text;
+  }
   window.clearTimeout(state.hintTimer);
   state.hintTimer = window.setTimeout(() => {
     ui.hint.classList.add('is-hide');

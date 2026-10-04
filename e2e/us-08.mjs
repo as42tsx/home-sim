@@ -35,6 +35,11 @@ try {
   const renamed = (await getPlan(page)).meta.name === '副本新名';
   rep.check('US-08 AC2', copied.meta.id !== id && copied.meta.name.includes('副本') && renamed && hasStamp && gone, `stamp ${hasStamp} gone ${gone} name ${renamed}`);
 
+  await page.locator('[data-testid="toast-action"]').click();
+  await page.locator('[data-action="plan-menu"]').click();
+  const afterUndo = await page.locator('[data-menu="plan"]').innerText();
+  const currentAfterUndo = await getPlan(page);
+  rep.check('US-08 undo delete', afterUndo.includes('持久方案') && currentAfterUndo.meta.name === '副本新名', `menu ${afterUndo.includes('持久方案')} open ${currentAfterUndo.meta.name}`);
   await page.keyboard.press('Escape');
   const beforeExport = await getPlan(page);
   const downloaded = await readDownload(page, async () => {
@@ -78,6 +83,19 @@ try {
   const fail = await page.locator('[data-testid="toast"]').innerText();
   await page.evaluate(() => { Storage.prototype.setItem = window.__restoreSet; });
   rep.check('US-08 AC4', quota.includes('80%') && quotaBtn.includes('导出') && (fail.includes('没能写入') || fail.includes('保存失败')) && fail.includes('导出备份'), `quota "${quota.slice(0, 48)}" fail "${fail.slice(0, 48)}"`);
+
+  const newer = { ...exported, schemaVersion: 3 };
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'newer.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(newer)),
+  });
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-testid="toast"]')?.textContent || '';
+    return text.includes('版本') || text.includes('重试');
+  });
+  const versionText = await page.locator('[data-testid="toast"]').innerText();
+  rep.check('US-08 no error code', !/[A-Z_]{4,}/.test(versionText), versionText.slice(0, 80));
 
   process.exit(finish(page, rep));
 } catch (err) {

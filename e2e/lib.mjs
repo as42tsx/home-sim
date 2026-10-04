@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const BASE = process.env.BASE_URL || 'http://127.0.0.1:8766/home-sim/';
+export const ORIGIN = new URL(BASE).origin;
 export const SHOTS = '/workspace/home-sim-shots';
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
@@ -49,7 +50,7 @@ export async function newPage(browser, opts = {}) {
     hasTouch: mobile,
     deviceScaleFactor: mobile ? 2 : 1,
   });
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:8766' });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGIN });
   await context.addInitScript(() => {
     try {
       if (sessionStorage.getItem('homesim-e2e-keep') === '1') return;

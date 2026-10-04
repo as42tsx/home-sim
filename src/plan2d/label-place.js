@@ -10,8 +10,8 @@
  * virtual dividers. Phone name-only keeps 4 px from all of those.
  * A desktop room that is still at least 60×40 and cannot hold the 13/12
  * two-line box steps the real font to 12/10 once, and never smaller.
- * If 12/10 still cannot keep the tiers inside the room, the label sits
- * just outside on the open side of a virtual divider, still at 12/10.
+ * If 12/10 still cannot keep the tiers inside the room, the label is hidden.
+ * It is never parked outside the polygon, including across an open divider.
  * There is no scale transform and no glyph squeeze. Phone tries two-line,
  * then name-only at 4 px, then hides the label.
  */
@@ -145,16 +145,33 @@ function decide(opts) {
     const stepBox = fullBox(step);
     const foundStep = search(screenPoly, sectors, solidEdges, dividers, stepBox, TIER_NEEDS);
     if (meets(foundStep)) return placed(foundStep, k, false, false, step.areaGap, true);
-    const outside = search(screenPoly, sectors, solidEdges, dividers, stepBox, TIER_NEEDS, 'outside');
-    if (outside && meets(outside)) return placed(outside, k, false, false, step.areaGap, true);
-    return placed(foundStep, k, false, false, step.areaGap, true);
+    return placed(hideAt(foundStep, screenPoly), k, false, true, step.areaGap, false);
   }
   if (!small) {
     const found = search(screenPoly, sectors, solidEdges, dividers, full, TIER_NEEDS);
     if (meets(found)) return placed(found, k, false, false, metrics.areaGap, false);
   }
   const foundName = search(screenPoly, sectors, solidEdges, dividers, name, PHONE_NAME_NEEDS);
-  return placed(foundName, k, true, !meets(foundName), metrics.areaGap, false);
+  const hidden = !meets(foundName);
+  return placed(hidden ? hideAt(foundName, screenPoly) : foundName, k, true, hidden, metrics.areaGap, false);
+}
+
+/** A hidden label still reports a point inside the room, never across a divider. */
+function hideAt(found, poly) {
+  if (!found || pointInPolygon({ x: found.x, y: found.y }, poly)) return found;
+  const bounds = bboxOf(poly);
+  const mid = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+  if (pointInPolygon(mid, poly)) return { ...found, x: mid.x, y: mid.y };
+  for (let gy = 1; gy <= 7; gy += 1) {
+    for (let gx = 1; gx <= 7; gx += 1) {
+      const point = {
+        x: bounds.minX + (bounds.maxX - bounds.minX) * (gx / 8),
+        y: bounds.minY + (bounds.maxY - bounds.minY) * (gy / 8),
+      };
+      if (pointInPolygon(point, poly)) return { ...found, x: point.x, y: point.y };
+    }
+  }
+  return found;
 }
 
 function meets(found) {
@@ -280,38 +297,26 @@ function bboxOf(poly) {
 /**
  * Grid search in screen pixels. Score is the spare px beyond the tier
  * (solid walls and door leaves/arcs versus virtual dividers).
- * `outside` keeps a 12/10 label that cannot fit inside on the open
- * side of a divider: slack at least 1 px, and within 7.5 px of the room.
- * @returns {{ x: number, y: number, slack: number, solid: number, divider: number } | null}
+ * The anchor stays inside the room polygon. Nothing is placed outside.
+ * @returns {{ x: number, y: number, slack: number, solid: number, divider: number }}
  */
-function search(poly, sectors, solidEdges, dividers, box, needs, mode) {
+function search(poly, sectors, solidEdges, dividers, box, needs) {
   const bounds = bboxOf(poly);
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cy = (bounds.minY + bounds.maxY) / 2;
-  const outside = mode === 'outside';
-  if (outside) {
-    const pad = Math.max(box.w, box.above + box.below) + needs.solid + 8;
-    bounds.minX -= pad;
-    bounds.maxX += pad;
-    bounds.minY -= pad;
-    bounds.maxY += pad;
-  }
-  let step = outside ? 2 : 6;
+  let step = 6;
   const spanX = Math.max(1, bounds.maxX - bounds.minX);
   const spanY = Math.max(1, bounds.maxY - bounds.minY);
-  if (!outside && spanX / step > 56) step = spanX / 56;
-  if (!outside && spanY / step > 56) step = Math.max(step, spanY / 56);
+  if (spanX / step > 56) step = spanX / 56;
+  if (spanY / step > 56) step = Math.max(step, spanY / 56);
   let best = null;
   const consider = (x, y) => {
-    const scored = scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs, outside);
+    const scored = scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs);
     if (!scored) return;
-    // Spare beyond the tier, and still within 7.5 px of the room, so the
-    // label stays on the open side of a divider instead of crossing a wall.
-    if (outside && (scored.slack < 0.75 || scored.near > SOLID_CLEAR - 0.5)) return;
     const dist = Math.hypot(x - cx, y - cy);
-    const better = outside
-      ? (!best || dist < best.dist - 1 || (Math.abs(dist - best.dist) <= 1 && scored.slack > best.slack))
-      : (!best || scored.slack > best.slack + 0.05 || (Math.abs(scored.slack - best.slack) <= 0.05 && dist < best.dist));
+    const better = !best
+      || scored.slack > best.slack + 0.05
+      || (Math.abs(scored.slack - best.slack) <= 0.05 && dist < best.dist);
     if (better) {
       best = { x, y, dist, slack: scored.slack, solid: scored.solid, divider: scored.divider };
     }
@@ -320,10 +325,7 @@ function search(poly, sectors, solidEdges, dividers, box, needs, mode) {
     for (let x = bounds.minX + step * 0.5; x < bounds.maxX; x += step) consider(x, y);
   }
   consider(cx, cy);
-  if (!best) {
-    if (outside) return null;
-    return { x: cx, y: cy, slack: -Infinity, solid: -Infinity, divider: Infinity };
-  }
+  if (!best) return { x: cx, y: cy, slack: -Infinity, solid: -Infinity, divider: Infinity };
   refine(best, Math.max(1, step / 2), consider);
   refine(best, 1, consider);
   for (let y = best.y - 1; y <= best.y + 1.01; y += 0.5) {
@@ -348,17 +350,16 @@ function rectAt(x, y, box) {
   };
 }
 
-function scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs, allowOutside) {
+function scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs) {
   const rect = rectAt(x, y, box);
   const centre = { x: (rect.minX + rect.maxX) / 2, y: (rect.minY + rect.maxY) / 2 };
-  if (!allowOutside && !pointInPolygon(centre, poly)) return null;
+  if (!pointInPolygon(centre, poly)) return null;
   const solid = expansionClearance(rect, (grown) => hitsSolid(grown, solidEdges, sectors));
   const divider = dividers.length
     ? expansionClearance(rect, (grown) => hitsDivider(grown, dividers))
     : Infinity;
   const dividerSlack = Number.isFinite(divider) ? divider - needs.divider : Infinity;
-  const near = Math.min(solid, Number.isFinite(divider) ? divider : solid);
-  return { solid, divider, near, slack: Math.min(solid - needs.solid, dividerSlack) };
+  return { solid, divider, slack: Math.min(solid - needs.solid, dividerSlack) };
 }
 
 function hitsSolid(rect, edges, sectors) {

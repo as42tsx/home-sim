@@ -130,6 +130,7 @@ const state = {
   space: false,
   snap: null,
   hoverWorld: null,
+  roomTip: null,
   openingPreview: null,
   openingSwing: 'in',
   measure: null,
@@ -361,6 +362,11 @@ function ensureChrome() {
   ui.hint.hidden = true;
   ui.pill = ensureDiv('float-pill', 'data-pill');
   ui.pill.hidden = true;
+  ui.roomTip = ensureDiv('room-hover-tip');
+  ui.roomTip.dataset.testid = 'room-hover-tip';
+  ui.roomTip.setAttribute('aria-hidden', 'true');
+  ui.roomTip.hidden = true;
+  ui.roomTip.innerHTML = '<span class="room-hover-name"></span><span class="room-hover-area"></span>';
   ui.picker = ensureDiv('picker', 'data-picker');
   ui.picker.dataset.testid = 'picker';
   ui.picker.hidden = true;
@@ -896,6 +902,7 @@ function bindEvents() {
   window.addEventListener('hashchange', () => { void onHashChange(); });
   window.addEventListener('storage', onStorage);
   svg.addEventListener('wheel', onWheel, { passive: false });
+  svg.addEventListener('pointerleave', () => clearRoomTip());
   ui.file.addEventListener('change', () => {
     const file = ui.file.files?.[0];
     ui.file.value = '';
@@ -1740,6 +1747,7 @@ function buildModel() {
     lower,
     exteriorDims: exteriorDimensions(floor),
     entryMark: entryMarkFor(floor),
+    roomHoverId: state.roomTip ? String(state.roomTip.id) : '',
   };
 }
 
@@ -1762,6 +1770,10 @@ function textPx(text, size) {
 const textMeasure = new Map();
 let labelCache = { key: '', k: 0, labels: null };
 let hiddenLabelIds = [];
+let roomTipTimer = 0;
+let roomTipWait = '';
+let roomTipCursor = null;
+const ROOM_TIP_MS = 300;
 const LABEL_LINE_GAP = 2;
 
 function labelTypePx(className, phone) {
@@ -2272,6 +2284,7 @@ function paddedNodeBox(pts) {
 }
 
 function setTool(tool, silent) {
+  if (tool !== 'select') dismissRoomTip();
   if (tool === 'view3d') {
     void enter3d(false);
     return;
@@ -2300,6 +2313,7 @@ function setTool(tool, silent) {
 }
 
 function setMode(mode) {
+  if (mode !== 'plan') dismissRoomTip();
   if (mode === 'view3d') {
     void enter3d(false);
     return;
@@ -2417,9 +2431,127 @@ function updateHover(event) {
   if ((state.tool === 'door' || state.tool === 'window') && state.mode === 'plan') {
     state.openingPreview = previewOpening(state.store.getPlan(), state.floorId, world, openingSpec(), state.camera.k);
   } else state.openingPreview = null;
+  syncRoomTip(event);
   renderCanvas();
   renderStatus();
   patchLength();
+}
+
+function finePointer() {
+  try {
+    return !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+  } catch {
+    return false;
+  }
+}
+
+function roomTipEnabled() {
+  if (!finePointer()) return false;
+  if (state.layout === 'phone' || state.mode !== 'plan' || state.pickerOpen) return false;
+  if (svg?.hidden) return false;
+  if (state.tool !== 'select' || state.space || state.walkPick || state.furnDrag) return false;
+  const gesture = state.gesture;
+  if (gesture && (gesture.kind !== 'select' || gesture.moved || gesture.drag)) return false;
+  return true;
+}
+
+function paintRoomTip() {
+  const tip = ui.roomTip;
+  if (!tip) return;
+  const current = state.roomTip;
+  if (!current) {
+    tip.hidden = true;
+    return;
+  }
+  const name = tip.querySelector('.room-hover-name');
+  const area = tip.querySelector('.room-hover-area');
+  if (name) name.textContent = current.name || '';
+  if (area) area.textContent = current.area || '';
+  tip.hidden = false;
+  const host = ui.canvas.getBoundingClientRect();
+  const width = tip.offsetWidth || 0;
+  const height = tip.offsetHeight || 0;
+  let left = current.clientX - host.left + 14;
+  let top = current.clientY - host.top + 18;
+  if (width > 0 && left + width > host.width - 4) left = current.clientX - host.left - width - 14;
+  if (height > 0 && top + height > host.height - 4) top = current.clientY - host.top - height - 12;
+  left = Math.max(4, Math.min(left, Math.max(4, host.width - width - 4)));
+  top = Math.max(4, Math.min(top, Math.max(4, host.height - height - 4)));
+  tip.style.left = `${Math.round(left)}px`;
+  tip.style.top = `${Math.round(top)}px`;
+}
+
+function dismissRoomTip() {
+  window.clearTimeout(roomTipTimer);
+  roomTipTimer = 0;
+  roomTipWait = '';
+  roomTipCursor = null;
+  const had = !!state.roomTip;
+  state.roomTip = null;
+  paintRoomTip();
+  return had;
+}
+
+function clearRoomTip() {
+  if (dismissRoomTip()) renderCanvas();
+}
+
+function hiddenLabelRecord(id) {
+  const key = String(id);
+  for (const label of labelCache.labels || []) {
+    if (String(label.id) === key && label.hidden) return label;
+  }
+  return null;
+}
+
+function syncRoomTip(event) {
+  const over = !!(event?.target?.closest?.('.plan-svg'));
+  if (!roomTipEnabled() || !over) {
+    dismissRoomTip();
+    return;
+  }
+  const hit = state.hoverWorld ? pick(state.hoverWorld) : null;
+  const id = hit?.kind === 'room' ? String(hit.id) : '';
+  const label = id ? hiddenLabelRecord(id) : null;
+  if (!label) {
+    dismissRoomTip();
+    return;
+  }
+  const cursor = {
+    id,
+    name: label.name || '',
+    area: label.area || '',
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
+  if (state.roomTip?.id === id) {
+    state.roomTip = { ...state.roomTip, clientX: cursor.clientX, clientY: cursor.clientY };
+    paintRoomTip();
+    return;
+  }
+  if (roomTipWait === id && roomTipTimer) {
+    roomTipCursor = cursor;
+    return;
+  }
+  dismissRoomTip();
+  roomTipWait = id;
+  roomTipCursor = cursor;
+  roomTipTimer = window.setTimeout(() => {
+    roomTipTimer = 0;
+    if (roomTipWait !== id || !roomTipEnabled()) return;
+    const ready = roomTipCursor;
+    if (!ready || ready.id !== id) return;
+    state.roomTip = {
+      id,
+      name: ready.name,
+      area: ready.area,
+      clientX: ready.clientX,
+      clientY: ready.clientY,
+    };
+    roomTipWait = '';
+    paintRoomTip();
+    renderCanvas();
+  }, ROOM_TIP_MS);
 }
 
 function patchLength() {
@@ -2576,6 +2708,7 @@ function onPointerDown(event) {
   }
   state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   if (state.pointers.size >= 2) {
+    clearRoomTip();
     cancelGesture();
     return;
   }
@@ -2590,6 +2723,7 @@ function onPointerDown(event) {
   const world = view.worldFromClient(event.clientX, event.clientY);
   state.hoverWorld = world;
   if (event.button === 1 || state.space || state.tool === 'pan') {
+    clearRoomTip();
     state.gesture = { kind: 'pan', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     return;
   }
@@ -2613,19 +2747,23 @@ function onPointerDown(event) {
     return;
   }
   if (state.tool === 'wall' && state.mode === 'plan') {
+    clearRoomTip();
     state.gesture = { kind: 'wall', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     return;
   }
   if ((state.tool === 'door' || state.tool === 'window') && state.mode === 'plan') {
+    clearRoomTip();
     state.gesture = { kind: 'door', pointerId: event.pointerId };
     updateHover(event);
     return;
   }
   if (state.tool === 'measure') {
+    clearRoomTip();
     state.gesture = { kind: 'measure', pointerId: event.pointerId };
     return;
   }
   if (state.tool === 'demolish') {
+    clearRoomTip();
     state.gesture = { kind: 'demolish', pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
     return;
   }
@@ -2660,6 +2798,7 @@ function onPointerMove(event) {
     state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   }
   if (state.pointers.size >= 2) {
+    clearRoomTip();
     if (state.mode !== 'view3d' && !svg.hidden) pinch();
     return;
   }
@@ -2670,7 +2809,7 @@ function onPointerMove(event) {
   if (!state.gesture) {
     if (event.target.closest?.('.plan-svg') || state.tool === 'wall' || state.tool === 'door' || state.tool === 'window') {
       updateHover(event);
-    }
+    } else clearRoomTip();
     return;
   }
   if (state.gesture.kind === 'pan') {
@@ -2686,6 +2825,7 @@ function onPointerMove(event) {
     const dist = Math.hypot(event.clientX - state.gesture.x, event.clientY - state.gesture.y);
     if (!state.gesture.drag && dist < 4) return;
     state.gesture.moved = true;
+    clearRoomTip();
     const world = view.worldFromClient(event.clientX, event.clientY);
     if (!state.gesture.drag) {
       const drag = beginSelectionDrag(state.gesture.hit, state.gesture.world);

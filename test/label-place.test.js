@@ -155,7 +155,7 @@ test('a short area line stays once the room is at least 60 by 40', () => {
   };
   const kept = placeRoomLabel(short);
   assert.equal(kept.nameOnly, false);
-  assert.equal(kept.hidden, false);
+  assert.equal(kept.hidden, true);
   assert.equal(labelNeedsNameOnly(short), false);
   const narrow = placeRoomLabel({ ...short, polygon: rectPoly(590, 450), at: { x: 295, y: 225 } });
   const flat = placeRoomLabel({ ...short, polygon: rectPoly(700, 390), at: { x: 350, y: 195 } });
@@ -263,13 +263,14 @@ test('a desktop label that cannot clear the tiers steps to 12/10 and no further'
     polygon: rectPoly(680, 500),
     at: { x: 340, y: 250 },
   });
-  assert.equal(stillTight.fontStep, true);
+  assert.equal(stillTight.fontStep, false);
   assert.equal(stillTight.nameOnly, false);
-  assert.equal(stillTight.hidden, false);
+  assert.equal(stillTight.hidden, true);
   assert.equal(stillTight.fitScale, undefined);
+  assert.equal(pointInPoly({ x: stillTight.x, y: stillTight.y }, rectPoly(680, 500)), true);
 });
 
-test('a door-blocked corridor steps to 12/10 and clears the tiers on the open side', () => {
+test('a door-blocked corridor hides instead of crossing the open divider', () => {
   const k = 0.056842105263157916;
   const polygon = [
     { x: 3660, y: 2760 },
@@ -282,7 +283,7 @@ test('a door-blocked corridor steps to 12/10 and clears the tiers on the open si
     jamb: { x: 5100, y: 3900 },
     leaf: { x: 4200, y: 3000 },
   };
-  const placed = placeRoomLabel({
+  const opts = {
     polygon,
     at: { x: 4350, y: 3480 },
     swings: [swing],
@@ -300,24 +301,77 @@ test('a door-blocked corridor steps to 12/10 and clears the tiers on the open si
     stepAreaGap: 14,
     stepAreaDescent: 2,
     k,
-  });
-  assert.equal(placed.fontStep, true);
-  assert.equal(placed.nameOnly, false);
-  assert.equal(placed.hidden, false);
-  assert.equal(placed.fitScale, undefined);
-  const rect = {
-    minX: placed.x - (42.16 / k) / 2,
-    maxX: placed.x + (42.16 / k) / 2,
-    minY: placed.y - 14 / k,
-    maxY: placed.y + 16 / k,
   };
-  assert.ok(rect.minY >= 4200 + (DIVIDER_CLEAR - 0.35) / k, `divider side ${rect.minY}`);
-  assert.ok(rect.maxY < 4200 + 900, `label wandered to ${rect.maxY}`);
-  assert.ok(rect.minX > 3660 - 80 && rect.maxX < 5040 + 80, 'left the corridor opening');
-  const grown = grow(rect, (SOLID_CLEAR - 0.35) / k);
-  for (const point of leafArcSamples(swing, 16)) {
-    assert.equal(pointInRect(point, grown), false, `leaf/arc ${point.x},${point.y}`);
+  const placed = placeRoomLabel(opts);
+  assert.equal(placed.fontStep, false);
+  assert.equal(placed.nameOnly, false);
+  assert.equal(placed.hidden, true);
+  assert.equal(placed.fitScale, undefined);
+  assert.equal(pointInPoly({ x: placed.x, y: placed.y }, polygon), true);
+  assert.ok(placed.y > 2760 && placed.y < 4200, `anchor left the room at y ${placed.y}`);
+  assert.ok(placed.x > 3660 && placed.x < 5040, `anchor left the room at x ${placed.x}`);
+  const phone = placeRoomLabel({ ...opts, phone: true });
+  assert.equal(pointInPoly({ x: phone.x, y: phone.y }, polygon), true);
+  assert.ok(phone.y > 2760 && phone.y < 4200, `phone anchor left the room at y ${phone.y}`);
+  if (!phone.hidden) {
+    const rect = anchorBox(phone, k, true, opts.boxW, opts.nameW);
+    for (const corner of rectCorners(grow(rect, (PHONE_NAME_CLEAR - 0.35) / k))) {
+      assert.equal(pointInPoly(corner, polygon), true, `phone corner ${corner.x},${corner.y}`);
+    }
   }
+});
+
+test('desktop hides after 13/12 and 12/10, and a shown label stays inside its polygon', () => {
+  const open = placeRoomLabel({
+    polygon: rectPoly(4000, 3000),
+    at: { x: 2000, y: 1500 },
+    boxW: 48,
+    nameW: 28,
+    k: 0.1,
+    ...METRICS,
+  });
+  assert.equal(open.hidden, false);
+  assert.equal(open.nameOnly, false);
+  assert.equal(open.fontStep, false);
+  assertBoxInside(open, 0.1, false, false, 48, 28, rectPoly(4000, 3000));
+
+  const stepped = placeRoomLabel({
+    polygon: rectPoly(900, 800),
+    at: { x: 450, y: 400 },
+    boxW: 80,
+    nameW: 30,
+    k: 0.1,
+    ...METRICS,
+  });
+  assert.equal(stepped.hidden, false);
+  assert.equal(stepped.nameOnly, false);
+  assert.equal(stepped.fontStep, true);
+  assertBoxInside(stepped, 0.1, false, true, 80, 30, rectPoly(900, 800));
+
+  const hidden = placeRoomLabel({
+    polygon: rectPoly(680, 500),
+    at: { x: 340, y: 250 },
+    boxW: 80,
+    nameW: 30,
+    k: 0.1,
+    ...METRICS,
+  });
+  assert.equal(hidden.hidden, true);
+  assert.equal(hidden.nameOnly, false);
+  assert.equal(hidden.fontStep, false);
+  assert.equal(pointInPoly({ x: hidden.x, y: hidden.y }, rectPoly(680, 500)), true);
+
+  const phone = placeRoomLabel({
+    polygon: rectPoly(200, 150),
+    at: { x: 100, y: 75 },
+    boxW: 40,
+    nameW: 36,
+    k: 0.1,
+    phone: true,
+    ...METRICS,
+  });
+  assert.equal(phone.hidden, true);
+  assert.equal(pointInPoly({ x: phone.x, y: phone.y }, rectPoly(200, 150)), true);
 });
 
 test('phone falls back from two-line at 8 px to name-only at 4 px to hidden', () => {
@@ -377,6 +431,29 @@ test('phone falls back from two-line at 8 px to name-only at 4 px to hidden', ()
   assert.equal(tinyDesk.hidden, false);
   assert.equal(tinyDesk.fontStep, false);
 });
+
+function assertBoxInside(placed, k, nameOnly, fontStep, boxW, nameW, polygon) {
+  const rect = fontStep ? steppedAnchorBox(placed, k, boxW, nameW) : anchorBox(placed, k, nameOnly, boxW, nameW);
+  for (const corner of rectCorners(rect)) {
+    assert.equal(pointInPoly(corner, polygon), true, `corner ${corner.x},${corner.y}`);
+  }
+  assert.equal(pointInPoly({ x: placed.x, y: placed.y }, polygon), true);
+}
+
+function steppedAnchorBox(placed, k, boxW, nameW) {
+  const stepW = Math.max(nameW * (NAME_FONT_MIN / NAME_FONT), Math.max(boxW, nameW) * (AREA_FONT_MIN / AREA_FONT));
+  const nameAscent = METRICS.nameAscent * (NAME_FONT_MIN / NAME_FONT);
+  const nameDescent = METRICS.nameDescent * (NAME_FONT_MIN / NAME_FONT);
+  const areaAscent = Math.max(0, METRICS.areaGap - METRICS.nameDescent - 2);
+  const areaGap = nameDescent + 2 + areaAscent * (AREA_FONT_MIN / AREA_FONT);
+  const areaDescent = METRICS.areaDescent * (AREA_FONT_MIN / AREA_FONT);
+  return {
+    minX: placed.x - (stepW / k) / 2,
+    maxX: placed.x + (stepW / k) / 2,
+    minY: placed.y - nameAscent / k,
+    maxY: placed.y + (areaGap + areaDescent) / k,
+  };
+}
 
 function rectPoly(w, h) {
   return [

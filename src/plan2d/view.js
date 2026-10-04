@@ -132,7 +132,7 @@ export function mountPlanView(svg) {
     world.setAttribute('transform', `translate(${camera.x} ${camera.y}) scale(${camera.k})`);
     paintGrid(camera, w, h);
     paintFloor(lower, model.lower);
-    paintRooms(rooms, model.rooms || []);
+    paintRooms(rooms, model.rooms || [], model.roomHoverId || '');
     paintWalls(walls, model.walls || []);
     paintOpenings(openings, model.openings || []);
     paintFurniture(furniture, model.furniture || []);
@@ -202,8 +202,10 @@ function paintFloor(group, floor) {
   paintOpenings(layer(group, 'openings'), floor.openings || []);
 }
 
-function paintRooms(group, list) {
+function paintRooms(group, list, hoverId) {
+  const hover = hoverId ? list.find((room) => room.id === hoverId) : null;
   const keep = new Set(list.map((room) => room.id));
+  if (hover) keep.add('__hover');
   dropMissing(group, keep);
   for (const room of list) {
     const g = slot(group, room.id, 'g');
@@ -216,6 +218,21 @@ function paintRooms(group, list) {
     poly.setAttribute('fill', room.fill || 'var(--room-other)');
     poly.classList.toggle('is-merge', !!room.merge);
   }
+  if (!hover) return;
+  const g = slot(group, '__hover', 'g');
+  g.setAttribute('pointer-events', 'none');
+  let poly = g.querySelector('polygon');
+  if (!poly) {
+    poly = el('polygon', {
+      'data-testid': 'room-hover-fill',
+      fill: 'var(--accent-tint)',
+      'pointer-events': 'none',
+    });
+    g.append(poly);
+  }
+  poly.setAttribute('points', pointsAttr(hover.points));
+  poly.setAttribute('fill', 'var(--accent-tint)');
+  poly.setAttribute('pointer-events', 'none');
 }
 
 function paintWalls(group, list) {

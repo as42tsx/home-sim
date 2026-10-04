@@ -682,6 +682,37 @@ select:focus-visible {
   opacity: 0;
 }
 
+.room-hover-tip {
+  position: absolute;
+  z-index: var(--z-float);
+  pointer-events: none;
+  background: var(--ink-1);
+  color: var(--ink-inverse);
+  border-radius: var(--r-pill);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-13);
+  line-height: var(--lh-tight);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.room-hover-tip[hidden] {
+  display: none;
+}
+
+.room-hover-tip .room-hover-name {
+  font-family: var(--font-ui);
+}
+
+.room-hover-tip .room-hover-area {
+  font-family: var(--font-num);
+  font-size: var(--fs-12);
+}
+
 @media (min-width: 600px) {
   /* Overlay the panels. The shell grid stays so plan-svg does not move. */
   body.is-picker .picker {

@@ -1,7 +1,8 @@
 /**
  * Room-label clearance and the phone 2D fit.
  * Desktop 1440×900 and phone 390×844, three templates.
- * Violations fail. There is no soft flag.
+ * Visible labels must sit inside the room polygon. Hidden desktop rooms
+ * reveal the pill tooltip after 300 ms. Violations fail. There is no soft flag.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import { launch, newPage, openApp, chooseTemplate, frames, finish, report } from
 
 const TEMPLATES = ['apt-1br', 'apt-2br', 'apt-3br'];
 const SHOT_DIR = '/workspace/home-sim-shots/2026-10-04-r4';
+const HOVER_SHOT = '/workspace/home-sim-shots/2026-10-04-r5/grok-hover-3br.png';
 const SLACK = 0.35;
 const AREA_RE = /^\d+\.\d{2} m\u00B2$/;
 
@@ -47,10 +49,25 @@ async function runCase(page, id, kind) {
   await page.screenshot({ path: shot });
   const result = await page.evaluate(measure);
   const problems = judge(result, kind);
+  const timings = [];
   if (kind === 'phone') {
     for (const room of result.hiddenRooms) {
       const shown = await tapHidden(page, room);
       if (!shown.ok) problems.push(shown.detail);
+    }
+  }
+  if (kind === 'desktop') {
+    if (id === 'apt-3br' && !result.rooms.some((room) => room.name === '过道' && room.hidden)) {
+      problems.push('过道 still labeled on apt-3br desktop');
+    }
+    for (const room of result.hiddenRooms) {
+      const hover = await hoverHidden(page, room, id === 'apt-3br' && room.name === '过道');
+      if (!hover.ok) problems.push(hover.detail);
+      else if (hover.timing) timings.push(hover.timing);
+    }
+    if (result.probe?.point) {
+      const quiet = await hoverVisibleQuiet(page, result.probe);
+      if (!quiet.ok) problems.push(quiet.detail);
     }
   }
   const worstSolid = worstRoom(result.rooms, 'solid');
@@ -67,6 +84,7 @@ async function runCase(page, id, kind) {
     stepped.length ? `step ${stepped.join(',')}` : 'step none',
     `ratio ${ratio}`,
     `plan ${result.planPx == null ? 'n/a' : result.planPx.toFixed(1)}/${result.availPx == null ? 'n/a' : result.availPx.toFixed(1)}`,
+    timings.length ? `tip ${timings.join(', ')}` : '',
     problems.length ? problems.join(' | ') : '',
   ].filter(Boolean).join(' · ');
   rep.check(`labels ${id} ${kind}`, problems.length === 0, note);
@@ -86,10 +104,12 @@ function judge(result, kind) {
   const phone = kind === 'phone';
   if (result.badText.length) problems.push(result.badText.join('; '));
   for (const room of result.rooms) {
-    if (!phone && room.hidden) problems.push(`${room.name} hidden on desktop`);
     if (room.hidden && room.hasLabel) problems.push(`${room.name} hidden label still drawn`);
+    if (room.hasLabel && !room.hidden && room.inside === false) {
+      problems.push(`${room.name} label outside room by ${fmt(room.outsidePx)}px`);
+    }
     if (!room.hidden && !room.hasLabel) problems.push(`${room.name} missing label`);
-    if (room.big && !room.hasArea && !(phone && (room.hidden || room.nameOnly))) {
+    if (room.big && !room.hasArea && !room.hidden && !(phone && room.nameOnly)) {
       problems.push(`${room.name} missing area`);
     }
     if (!room.big && room.hasArea) problems.push(`${room.name} area on a ${room.w}×${room.h} room`);
@@ -130,6 +150,130 @@ function judge(result, kind) {
 
 function fmt(value) {
   return Number.isFinite(value) ? value.toFixed(2) : 'none';
+}
+
+async function hoverHidden(page, room, shot) {
+  if (!room.tap) return { ok: false, detail: `${room.name} no hover point` };
+  const pt = room.tap;
+  const t0 = Date.now();
+  await page.mouse.move(pt.x, pt.y);
+  await page.waitForTimeout(150);
+  const early = await readTip(page);
+  const earlyAt = Date.now() - t0;
+  if (early.visible) return { ok: false, detail: `${room.name} tip visible at ${earlyAt}ms` };
+  let shownAt = 0;
+  while (Date.now() - t0 < 480) {
+    const now = await readTip(page);
+    if (now.visible) {
+      shownAt = Date.now() - t0;
+      break;
+    }
+    await page.waitForTimeout(20);
+  }
+  if (!shownAt) return { ok: false, detail: `${room.name} tip still hidden at ${Date.now() - t0}ms` };
+  if (shownAt < 250) return { ok: false, detail: `${room.name} tip early at ${shownAt}ms` };
+  const info = await page.evaluate(() => {
+    const tip = document.querySelector('[data-testid="room-hover-tip"]');
+    const fill = document.querySelector('[data-testid="room-hover-fill"]');
+    const name = tip?.querySelector('.room-hover-name')?.textContent || '';
+    const area = tip?.querySelector('.room-hover-area')?.textContent || '';
+    const pe = tip ? getComputedStyle(tip).pointerEvents : '';
+    let fillValue = '';
+    let fillRgb = '';
+    let fillBox = null;
+    if (fill) {
+      fillValue = fill.getAttribute('fill') || '';
+      fillRgb = getComputedStyle(fill).fill || '';
+      const box = fill.getBoundingClientRect();
+      fillBox = { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+    }
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent-tint').trim();
+    return { name, area, pe, fillValue, fillRgb, fillBox, accent };
+  });
+  if (info.name !== room.name) return { ok: false, detail: `${room.name} tip name "${info.name}"` };
+  if (!AREA_RE.test(info.area)) return { ok: false, detail: `${room.name} tip area "${info.area}"` };
+  if (info.area !== room.expectArea) return { ok: false, detail: `${room.name} tip ${info.area} != ${room.expectArea}` };
+  if (info.pe !== 'none') return { ok: false, detail: `${room.name} tip pointer-events ${info.pe}` };
+  const fillOk = info.fillValue === 'var(--accent-tint)' || colorsMatch(info.fillRgb, info.accent);
+  if (!fillOk) return { ok: false, detail: `${room.name} fill "${info.fillValue}" / "${info.fillRgb}"` };
+  if (!info.fillBox || !boxClose(info.fillBox, room.screen, 2.5)) {
+    return { ok: false, detail: `${room.name} fill not over room` };
+  }
+  if (pt.x < info.fillBox.left - 1 || pt.x > info.fillBox.right + 1 || pt.y < info.fillBox.top - 1 || pt.y > info.fillBox.bottom + 1) {
+    return { ok: false, detail: `${room.name} hover point outside fill` };
+  }
+  if (shot) {
+    fs.mkdirSync(path.dirname(HOVER_SHOT), { recursive: true });
+    await page.screenshot({ path: HOVER_SHOT });
+  }
+  await page.mouse.move(12, 12);
+  await frames(page);
+  const gone = await readTip(page);
+  if (gone.visible || gone.fill) return { ok: false, detail: `${room.name} hover stayed after leave` };
+  await page.mouse.click(pt.x, pt.y);
+  await frames(page);
+  const shown = await page.evaluate((name) => {
+    const inspector = document.querySelector('.inspector');
+    const input = inspector?.querySelector('[data-field="room-name"]');
+    const total = inspector?.querySelector('.total')?.textContent || '';
+    const box = inspector ? inspector.getBoundingClientRect() : null;
+    return {
+      name: input?.value || '',
+      total,
+      onRight: !!(box && box.left > window.innerWidth * 0.55 && box.width > 200),
+    };
+  }, room.name);
+  const expect = `使用面积 ${room.expectArea.replace(/ m\u00B2$/, '')} m\u00B2`;
+  if (shown.name !== room.name) return { ok: false, detail: `${room.name} inspector name "${shown.name}"` };
+  if (!shown.total.includes(expect)) return { ok: false, detail: `${room.name} inspector "${shown.total}"` };
+  if (!shown.onRight) return { ok: false, detail: `${room.name} inspector not in the right column` };
+  return { ok: true, timing: `${room.name} ${shownAt}ms` };
+}
+
+async function hoverVisibleQuiet(page, probe) {
+  await page.mouse.move(probe.point.x, probe.point.y);
+  await page.waitForTimeout(450);
+  const on = await readTip(page);
+  await page.mouse.move(12, 12);
+  if (on.visible) return { ok: false, detail: `${probe.name} visible label showed a tip` };
+  if (on.fill) return { ok: false, detail: `${probe.name} visible label showed a fill` };
+  return { ok: true };
+}
+
+async function readTip(page) {
+  return page.evaluate(() => {
+    const tip = document.querySelector('[data-testid="room-hover-tip"]');
+    const fill = document.querySelector('[data-testid="room-hover-fill"]');
+    const style = tip ? getComputedStyle(tip) : null;
+    const visible = !!(tip && !tip.hidden && style && style.display !== 'none' && style.visibility !== 'hidden' && tip.getClientRects().length > 0);
+    return { visible, fill: !!fill };
+  });
+}
+
+function colorsMatch(paint, accent) {
+  const parse = (value) => {
+    const text = String(value || '').trim().toLowerCase();
+    const hex = /^#([0-9a-f]{6})$/.exec(text);
+    if (hex) {
+      const n = Number.parseInt(hex[1], 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    const rgb = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(text);
+    if (!rgb) return null;
+    return [Math.round(Number(rgb[1])), Math.round(Number(rgb[2])), Math.round(Number(rgb[3]))];
+  };
+  const a = parse(paint);
+  const b = parse(accent);
+  if (!a || !b) return false;
+  return Math.abs(a[0] - b[0]) <= 1 && Math.abs(a[1] - b[1]) <= 1 && Math.abs(a[2] - b[2]) <= 1;
+}
+
+function boxClose(a, b, tol) {
+  if (!a || !b) return false;
+  return Math.abs(a.left - b.left) <= tol
+    && Math.abs(a.top - b.top) <= tol
+    && Math.abs(a.right - b.right) <= tol
+    && Math.abs(a.bottom - b.bottom) <= tol;
 }
 
 async function tapHidden(page, room) {
@@ -229,15 +373,25 @@ function measure() {
     }
     const rooms = [];
     const hiddenRooms = [];
+    let probe = null;
     for (const face of faces) {
       const id = String(face.roomId);
       const label = byId.get(id);
-      const poly = (face.polygon || []).map((point) => debug.worldToScreen(point.x, point.y));
+      const ring = face.polygon?.length >= 3 ? face.polygon : (face.centerline || []);
+      const poly = ring.map((point) => debug.worldToScreen(point.x, point.y));
+      const holes = (face.holePolygons || []).map((hole) => hole.map((point) => debug.worldToScreen(point.x, point.y)));
       const bounds = bboxOf(poly);
       const big = bounds.w >= 60 && bounds.h >= 40;
       const hidden = hiddenSet.has(id);
       const expectArea = areaShort(face.areaM2);
       const name = label?.name || face.name || id;
+      let inside = null;
+      let outsidePx = null;
+      if (label?.box && (label.box.width > 0 || label.box.height > 0)) {
+        const fit = labelInside(label.box, poly, holes, polyMod.pointInPolygon);
+        inside = fit.ok;
+        outsidePx = fit.outside;
+      }
       let solid = null;
       let wall = null;
       let divider = null;
@@ -272,13 +426,19 @@ function measure() {
         divider: divider == null || !Number.isFinite(divider) ? null : Number(divider.toFixed(2)),
         wall: wall == null ? null : wall,
         door: door == null ? null : door,
+        inside,
+        outsidePx,
+        screen: { left: bounds.minX, top: bounds.minY, right: bounds.maxX, bottom: bounds.maxY },
       };
       rooms.push(room);
-      if (phone && hidden) {
+      if (hidden) {
         hiddenRooms.push({
           ...room,
           tap: findTap(face, floor, derived, hitMod.hitTest, polyMod.pointInPolygon, debug, k),
         });
+      } else if (!phone && !probe) {
+        const point = findTap(face, floor, derived, hitMod.hitTest, polyMod.pointInPolygon, debug, k);
+        if (point) probe = { name, point };
       }
     }
     const strip = stripRect();
@@ -315,6 +475,7 @@ function measure() {
     return {
       rooms,
       hiddenRooms,
+      probe,
       badText,
       ratio: fit ? fit.ratio : null,
       planPx: fit ? fit.planPx : null,
@@ -325,6 +486,65 @@ function measure() {
       dimsInside,
     };
   });
+
+  function labelInside(box, poly, holes, pointInPolygon) {
+    const slack = 1;
+    const rect = { minX: box.left, maxX: box.right, minY: box.top, maxY: box.bottom };
+    const midX = (rect.minX + rect.maxX) / 2;
+    const midY = (rect.minY + rect.maxY) / 2;
+    const samples = [
+      { x: rect.minX, y: rect.minY },
+      { x: rect.maxX, y: rect.minY },
+      { x: rect.maxX, y: rect.maxY },
+      { x: rect.minX, y: rect.maxY },
+      { x: midX, y: rect.minY },
+      { x: midX, y: rect.maxY },
+      { x: rect.minX, y: midY },
+      { x: rect.maxX, y: midY },
+    ];
+    let outside = 0;
+    for (const point of samples) outside = Math.max(outside, outsideGap(point, poly, holes, pointInPolygon));
+    const inner = {
+      minX: rect.minX + slack,
+      maxX: rect.maxX - slack,
+      minY: rect.minY + slack,
+      maxY: rect.maxY - slack,
+    };
+    if (inner.maxX > inner.minX && inner.maxY > inner.minY) {
+      const rings = [poly, ...(holes || [])];
+      for (const ring of rings) {
+        for (let i = 0; i < ring.length; i += 1) {
+          if (segmentHitsRect(ring[i], ring[(i + 1) % ring.length], inner)) outside = Math.max(outside, slack + 0.01);
+        }
+      }
+    }
+    return { ok: outside <= slack, outside };
+  }
+
+  function outsideGap(point, poly, holes, pointInPolygon) {
+    if (!pointInPolygon(point, poly)) return distToRing(point, poly);
+    for (const hole of holes || []) {
+      if (pointInPolygon(point, hole)) return distToRing(point, hole);
+    }
+    return 0;
+  }
+
+  function distToRing(point, ring) {
+    let best = Infinity;
+    for (let i = 0; i < ring.length; i += 1) {
+      best = Math.min(best, distToSeg(point, ring[i], ring[(i + 1) % ring.length]));
+    }
+    return best;
+  }
+
+  function distToSeg(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-6) return Math.hypot(p.x - a.x, p.y - a.y);
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+    return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  }
 
   function edgeOnDivider(a, b, dividers) {
     for (const [c, d] of dividers) {

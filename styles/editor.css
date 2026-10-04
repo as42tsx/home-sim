@@ -420,6 +420,15 @@ select:focus-visible {
   flex: none;
 }
 
+.room-cols {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
 .room-row {
   width: 100%;
   display: flex;
@@ -1254,6 +1263,13 @@ body[data-mode="view3d"] [data-zoom] {
   .sheet-tabs button,
   .furn-item {
     min-height: var(--hit-min);
+  }
+
+  /* The selection bar is position:fixed with an inline top. Keep it above the
+     sheet so its 44 px buttons never cover the 44 px handle or the tabs. */
+  .fab {
+    top: auto !important;
+    bottom: calc(var(--tabbar-h) + var(--sheet-h) + 8px) !important;
   }
 }
 

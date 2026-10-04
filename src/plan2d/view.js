@@ -8,6 +8,7 @@
 import { openingGeometry } from '../editor/opening-geom.js';
 import { pointsAttr, wallQuad } from '../editor/wall-shape.js';
 import { furnitureSymbol, legendForType } from './furniture-symbols.js';
+import { AREA_FONT_MIN, NAME_FONT_MIN } from './label-place.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -519,6 +520,7 @@ function paintScreen(group, model) {
   const camera = model.camera;
   const keep = new Set();
   for (const label of model.labels || []) {
+    if (label.hidden) continue;
     keep.add(`label:${label.id}`);
     const g = slot(group, `label:${label.id}`, 'g');
     g.setAttribute('data-room-label', label.id);
@@ -530,6 +532,24 @@ function paintScreen(group, model) {
       g.replaceChildren(name, area);
     }
     const at = screenOf(camera, label);
+    g.removeAttribute('transform');
+    if (label.fontStep) {
+      name.setAttribute('font-size', String(NAME_FONT_MIN));
+      area.setAttribute('font-size', String(AREA_FONT_MIN));
+      name.style.fontSize = `${NAME_FONT_MIN}px`;
+      area.style.fontSize = `${AREA_FONT_MIN}px`;
+      g.setAttribute('data-font-step', '1');
+    } else {
+      name.removeAttribute('font-size');
+      area.removeAttribute('font-size');
+      name.style.fontSize = '';
+      area.style.fontSize = '';
+      g.removeAttribute('data-font-step');
+    }
+    name.removeAttribute('textLength');
+    name.removeAttribute('lengthAdjust');
+    area.removeAttribute('textLength');
+    area.removeAttribute('lengthAdjust');
     name.setAttribute('x', at.x);
     name.setAttribute('y', at.y);
     name.textContent = label.name;

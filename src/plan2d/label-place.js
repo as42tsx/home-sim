@@ -2,15 +2,37 @@
  * Room-label placement.
  * World units are millimetres, y down. The label box is in screen pixels.
  * The anchor is the name baseline, centred horizontally. The area baseline
- * sits `areaGap` pixels below that (16 at the desktop 13/12 sizes).
+ * sits `areaGap` pixels below that (measured font gap, about 2 px of space).
  *
- * Whether the area line is shown depends only on the room's on-screen size,
- * never on door swings. Swings only move the label.
+ * The area line is hidden only when the room's on-screen box is under 60×40 px.
+ * Two-line labels (desktop, and phone before the name-only fallback) keep
+ * 8 px from solid wall edges and door leaves/arcs, and 4 px from dashed
+ * virtual dividers. Phone name-only keeps 4 px from all of those.
+ * A desktop room that is still at least 60×40 and cannot hold the 13/12
+ * two-line box steps the real font to 12/10 once, and never smaller.
+ * If 12/10 still cannot keep the tiers inside the room, the label sits
+ * just outside on the open side of a virtual divider, still at 12/10.
+ * There is no scale transform and no glyph squeeze. Phone tries two-line,
+ * then name-only at 4 px, then hides the label.
  */
 
 import { pointInPolygon } from '../geometry/polygon.js';
 
-const CLEARANCE = 8;
+export const SOLID_CLEAR = 8;
+export const DIVIDER_CLEAR = 4;
+export const PHONE_NAME_CLEAR = 4;
+export const NAME_FONT = 13;
+export const AREA_FONT = 12;
+export const NAME_FONT_MIN = 12;
+export const AREA_FONT_MIN = 10;
+
+const ROOM_MIN_W = 60;
+const ROOM_MIN_H = 40;
+const LINE_GAP = 2;
+const NAME_SCALE = NAME_FONT_MIN / NAME_FONT;
+const AREA_SCALE = AREA_FONT_MIN / AREA_FONT;
+const TIER_NEEDS = { solid: SOLID_CLEAR, divider: DIVIDER_CLEAR };
+const PHONE_NAME_NEEDS = { solid: PHONE_NAME_CLEAR, divider: PHONE_NAME_CLEAR };
 
 /**
  * Axis-aligned bounds of a door leaf and its swing arc.
@@ -61,25 +83,13 @@ export function swingSectorBBox(hinge, jamb, leaf) {
 }
 
 /**
- * Name only when the room's on-screen box is under ~60×40 px, or when the
- * two-line label cannot keep 8 px from the walls anywhere inside it.
- * Door swings are not an input: they move the label, they do not hide the area.
+ * Name only when the room's on-screen box is under 60×40 px.
+ * On phone, also when the two-line label cannot keep the solid/divider tiers.
  * @param {object} opts
  * @returns {boolean}
  */
 export function labelNeedsNameOnly(opts) {
-  const poly = opts.polygon || [];
-  if (poly.length < 3) return false;
-  const k = opts.k > 0 ? opts.k : 0.05;
-  const bounds = bboxOf(poly);
-  const width = (bounds.maxX - bounds.minX) * k;
-  const height = (bounds.maxY - bounds.minY) * k;
-  if (width < 60 || height < 40) return true;
-  const metrics = metricsOf(opts);
-  const box = fullBox(metrics);
-  if (width < box.w + CLEARANCE * 2 || height < box.above + box.below + CLEARANCE * 2) return true;
-  const found = search(scalePoly(poly, k), [], box);
-  return found.clearance < CLEARANCE - 1e-3;
+  return decide(opts).nameOnly;
 }
 
 /**
@@ -87,6 +97,8 @@ export function labelNeedsNameOnly(opts) {
  * @param {{x:number,y:number}[]} opts.polygon room net polygon, wall faces
  * @param {{x:number,y:number}} [opts.at]
  * @param {{hinge:{x:number,y:number}, jamb:{x:number,y:number}, leaf:{x:number,y:number}}[]} [opts.swings]
+ * @param {{a:{x:number,y:number}, b:{x:number,y:number}}[]} [opts.dividers] virtual-wall lines
+ * @param {boolean} [opts.phone]
  * @param {number} opts.boxW full label width, screen px
  * @param {number} [opts.nameW]
  * @param {number} opts.k pixels per millimetre
@@ -95,26 +107,108 @@ export function labelNeedsNameOnly(opts) {
  * @param {number} [opts.areaGap] pixels from the name baseline to the area baseline
  * @param {number} [opts.areaAscent]
  * @param {number} [opts.areaDescent]
- * @returns {{ x: number, y: number, nameOnly: boolean, lineDy: number }}
+ * @param {number} [opts.stepBoxW] two-line width at name 12 / area 10
+ * @param {number} [opts.stepNameW]
+ * @param {number} [opts.stepNameAscent]
+ * @param {number} [opts.stepNameDescent]
+ * @param {number} [opts.stepAreaGap]
+ * @param {number} [opts.stepAreaDescent]
+ * @returns {{ x: number, y: number, nameOnly: boolean, hidden: boolean, lineDy: number, fontStep: boolean }}
  */
 export function placeRoomLabel(opts) {
+  return decide(opts);
+}
+
+function decide(opts) {
   const at = opts.at || { x: 0, y: 0 };
   const poly = opts.polygon || [];
   const metrics = metricsOf(opts);
   if (poly.length < 3) {
-    return { x: at.x, y: at.y, nameOnly: false, lineDy: metrics.areaGap };
+    return { x: at.x, y: at.y, nameOnly: false, hidden: false, lineDy: metrics.areaGap, fontStep: false };
   }
-  const nameOnly = labelNeedsNameOnly(opts);
   const k = opts.k > 0 ? opts.k : 0.05;
+  const screenPoly = scalePoly(poly, k);
   const sectors = (opts.swings || []).map((swing) => sectorScreen(swing, k)).filter(Boolean);
-  const box = nameOnly ? nameBox(metrics) : fullBox(metrics);
-  const found = search(scalePoly(poly, k), sectors, box);
+  const dividers = scaleDividers(opts.dividers, k);
+  const solidEdges = solidEdgesOf(screenPoly, dividers);
+  const small = roomIsSmall(poly, k);
+  const full = fullBox(metrics);
+  const name = nameBox(metrics);
+  if (!opts.phone) {
+    if (small) {
+      const found = search(screenPoly, sectors, solidEdges, dividers, name, TIER_NEEDS);
+      return placed(found, k, true, false, metrics.areaGap, false);
+    }
+    const found = search(screenPoly, sectors, solidEdges, dividers, full, TIER_NEEDS);
+    if (meets(found)) return placed(found, k, false, false, metrics.areaGap, false);
+    const step = steppedMetrics(opts, metrics);
+    const stepBox = fullBox(step);
+    const foundStep = search(screenPoly, sectors, solidEdges, dividers, stepBox, TIER_NEEDS);
+    if (meets(foundStep)) return placed(foundStep, k, false, false, step.areaGap, true);
+    const outside = search(screenPoly, sectors, solidEdges, dividers, stepBox, TIER_NEEDS, 'outside');
+    if (outside && meets(outside)) return placed(outside, k, false, false, step.areaGap, true);
+    return placed(foundStep, k, false, false, step.areaGap, true);
+  }
+  if (!small) {
+    const found = search(screenPoly, sectors, solidEdges, dividers, full, TIER_NEEDS);
+    if (meets(found)) return placed(found, k, false, false, metrics.areaGap, false);
+  }
+  const foundName = search(screenPoly, sectors, solidEdges, dividers, name, PHONE_NAME_NEEDS);
+  return placed(foundName, k, true, !meets(foundName), metrics.areaGap, false);
+}
+
+function meets(found) {
+  return found.slack >= -1e-3;
+}
+
+function placed(found, k, nameOnly, hidden, lineDy, fontStep) {
   return {
     x: found.x / k,
     y: found.y / k,
     nameOnly,
-    lineDy: metrics.areaGap,
+    hidden,
+    lineDy,
+    fontStep: !!fontStep,
   };
+}
+
+/** Metrics for the one allowed desktop step, name 12 / area 10. */
+function steppedMetrics(opts, metrics) {
+  const nameAscent = num(opts.stepNameAscent, metrics.nameAscent * NAME_SCALE);
+  const nameDescent = num(opts.stepNameDescent, metrics.nameDescent * NAME_SCALE);
+  const areaDescent = num(opts.stepAreaDescent, metrics.areaDescent * AREA_SCALE);
+  let areaGap = opts.stepAreaGap;
+  if (!Number.isFinite(areaGap)) {
+    const areaAscent = Math.max(0, metrics.areaGap - metrics.nameDescent - LINE_GAP);
+    areaGap = nameDescent + LINE_GAP + areaAscent * AREA_SCALE;
+  }
+  const stepNameW = metrics.nameW * NAME_SCALE;
+  const stepAreaW = Math.max(metrics.boxW, metrics.nameW) * AREA_SCALE;
+  return {
+    boxW: opts.stepBoxW > 0 ? opts.stepBoxW : Math.max(stepNameW, stepAreaW),
+    nameW: opts.stepNameW > 0 ? opts.stepNameW : stepNameW,
+    nameAscent,
+    nameDescent,
+    areaGap,
+    areaDescent,
+  };
+}
+
+function roomIsSmall(poly, k) {
+  const bounds = bboxOf(poly);
+  return (bounds.maxX - bounds.minX) * k < ROOM_MIN_W || (bounds.maxY - bounds.minY) * k < ROOM_MIN_H;
+}
+
+function scaleDividers(list, k) {
+  const out = [];
+  for (const seg of list || []) {
+    const a = seg?.a;
+    const b = seg?.b;
+    if (!a || !b) continue;
+    if (!Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
+    out.push({ a: { x: a.x * k, y: a.y * k }, b: { x: b.x * k, y: b.y * k } });
+  }
+  return out;
 }
 
 function metricsOf(opts) {
@@ -184,42 +278,61 @@ function bboxOf(poly) {
 }
 
 /**
- * Grid search in screen pixels. Score is the L∞ clearance of the label box
- * (how far it can grow before it hits a wall edge or a door sector).
- * @returns {{ x: number, y: number, clearance: number }}
+ * Grid search in screen pixels. Score is the spare px beyond the tier
+ * (solid walls and door leaves/arcs versus virtual dividers).
+ * `outside` keeps a 12/10 label that cannot fit inside on the open
+ * side of a divider: slack at least 1 px, and within 7.5 px of the room.
+ * @returns {{ x: number, y: number, slack: number, solid: number, divider: number } | null}
  */
-function search(poly, sectors, box) {
+function search(poly, sectors, solidEdges, dividers, box, needs, mode) {
   const bounds = bboxOf(poly);
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cy = (bounds.minY + bounds.maxY) / 2;
-  let step = 6;
+  const outside = mode === 'outside';
+  if (outside) {
+    const pad = Math.max(box.w, box.above + box.below) + needs.solid + 8;
+    bounds.minX -= pad;
+    bounds.maxX += pad;
+    bounds.minY -= pad;
+    bounds.maxY += pad;
+  }
+  let step = outside ? 2 : 6;
   const spanX = Math.max(1, bounds.maxX - bounds.minX);
   const spanY = Math.max(1, bounds.maxY - bounds.minY);
-  if (spanX / step > 56) step = spanX / 56;
-  if (spanY / step > 56) step = Math.max(step, spanY / 56);
+  if (!outside && spanX / step > 56) step = spanX / 56;
+  if (!outside && spanY / step > 56) step = Math.max(step, spanY / 56);
   let best = null;
   const consider = (x, y) => {
-    const clearance = scoreAt(x, y, box, poly, sectors);
-    if (clearance == null) return;
+    const scored = scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs, outside);
+    if (!scored) return;
+    // Spare beyond the tier, and still within 7.5 px of the room, so the
+    // label stays on the open side of a divider instead of crossing a wall.
+    if (outside && (scored.slack < 0.75 || scored.near > SOLID_CLEAR - 0.5)) return;
     const dist = Math.hypot(x - cx, y - cy);
-    if (!best || clearance > best.clearance + 0.05 || (Math.abs(clearance - best.clearance) <= 0.05 && dist < best.dist)) {
-      best = { x, y, clearance, dist };
+    const better = outside
+      ? (!best || dist < best.dist - 1 || (Math.abs(dist - best.dist) <= 1 && scored.slack > best.slack))
+      : (!best || scored.slack > best.slack + 0.05 || (Math.abs(scored.slack - best.slack) <= 0.05 && dist < best.dist));
+    if (better) {
+      best = { x, y, dist, slack: scored.slack, solid: scored.solid, divider: scored.divider };
     }
   };
   for (let y = bounds.minY + step * 0.5; y < bounds.maxY; y += step) {
     for (let x = bounds.minX + step * 0.5; x < bounds.maxX; x += step) consider(x, y);
   }
   consider(cx, cy);
-  if (!best) return { x: cx, y: cy, clearance: -Infinity };
-  refine(best, box, poly, sectors, Math.max(1, step / 2), consider);
-  refine(best, box, poly, sectors, 1, consider);
+  if (!best) {
+    if (outside) return null;
+    return { x: cx, y: cy, slack: -Infinity, solid: -Infinity, divider: Infinity };
+  }
+  refine(best, Math.max(1, step / 2), consider);
+  refine(best, 1, consider);
   for (let y = best.y - 1; y <= best.y + 1.01; y += 0.5) {
     for (let x = best.x - 1; x <= best.x + 1.01; x += 0.5) consider(x, y);
   }
   return best;
 }
 
-function refine(best, box, poly, sectors, step, consider) {
+function refine(best, step, consider) {
   const reach = Math.max(step * 2, 4);
   for (let y = best.y - reach; y <= best.y + reach + 1e-6; y += step) {
     for (let x = best.x - reach; x <= best.x + reach + 1e-6; x += step) consider(x, y);
@@ -235,19 +348,84 @@ function rectAt(x, y, box) {
   };
 }
 
-function scoreAt(x, y, box, poly, sectors) {
+function scoreAt(x, y, box, poly, sectors, solidEdges, dividers, needs, allowOutside) {
   const rect = rectAt(x, y, box);
   const centre = { x: (rect.minX + rect.maxX) / 2, y: (rect.minY + rect.maxY) / 2 };
-  if (!pointInPolygon(centre, poly)) return null;
-  return expansionClearance(rect, (grown) => hits(grown, poly, sectors));
+  if (!allowOutside && !pointInPolygon(centre, poly)) return null;
+  const solid = expansionClearance(rect, (grown) => hitsSolid(grown, solidEdges, sectors));
+  const divider = dividers.length
+    ? expansionClearance(rect, (grown) => hitsDivider(grown, dividers))
+    : Infinity;
+  const dividerSlack = Number.isFinite(divider) ? divider - needs.divider : Infinity;
+  const near = Math.min(solid, Number.isFinite(divider) ? divider : solid);
+  return { solid, divider, near, slack: Math.min(solid - needs.solid, dividerSlack) };
 }
 
-function hits(rect, poly, sectors) {
-  if (rectHitsPoly(rect, poly)) return true;
+function hitsSolid(rect, edges, sectors) {
+  for (const edge of edges) {
+    if (segmentHitsRect(edge.a, edge.b, rect)) return true;
+  }
   for (const sector of sectors) {
-    if (rectHitsSector(rect, sector)) return true;
+    if (rectHitsLeafArc(rect, sector)) return true;
   }
   return false;
+}
+
+/** The drawn leaf and its swing arc. The open wedge is not an obstacle. */
+function rectHitsLeafArc(rect, sector) {
+  if (segmentHitsRect(sector.hinge, sector.leaf, rect)) return true;
+  if (pointInRect(sector.leaf, rect)) return true;
+  if (arcHitsRect(sector, rect)) return true;
+  const steps = 8;
+  for (let i = 0; i <= steps; i += 1) {
+    const ang = sector.a0 + sector.delta * (i / steps);
+    const point = {
+      x: sector.hinge.x + Math.cos(ang) * sector.r,
+      y: sector.hinge.y + Math.sin(ang) * sector.r,
+    };
+    if (pointInRect(point, rect)) return true;
+  }
+  return false;
+}
+
+function hitsDivider(rect, dividers) {
+  for (const seg of dividers) {
+    if (segmentHitsRect(seg.a, seg.b, rect)) return true;
+  }
+  return false;
+}
+
+/** Polygon edges that are not the dashed virtual divider itself. */
+function solidEdgesOf(poly, dividers) {
+  const edges = [];
+  const n = poly.length;
+  for (let i = 0; i < n; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+    if (onDivider(a, b, dividers)) continue;
+    edges.push({ a, b });
+  }
+  return edges;
+}
+
+function onDivider(a, b, dividers) {
+  for (const seg of dividers) {
+    if (segmentsCollinearOverlap(a, b, seg.a, seg.b, 0.8)) return true;
+  }
+  return false;
+}
+
+function segmentsCollinearOverlap(a, b, c, d, tol) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len = Math.hypot(abx, aby);
+  if (!(len > 1e-6)) return false;
+  const off = (px, py) => Math.abs((px - a.x) * aby - (py - a.y) * abx) / len;
+  if (off(c.x, c.y) > tol || off(d.x, d.y) > tol) return false;
+  const along = (px, py) => ((px - a.x) * abx + (py - a.y) * aby) / (len * len);
+  const t0 = Math.min(along(c.x, c.y), along(d.x, d.y));
+  const t1 = Math.max(along(c.x, c.y), along(d.x, d.y));
+  return t1 > 0.02 && t0 < 0.98;
 }
 
 function expansionClearance(rect, hitTest) {
@@ -282,31 +460,6 @@ function expand(rect, pad) {
   };
 }
 
-function rectHitsPoly(rect, poly) {
-  const corners = rectCorners(rect);
-  for (const corner of corners) {
-    if (!pointInPolygon(corner, poly)) return true;
-  }
-  const n = poly.length;
-  for (let i = 0; i < n; i += 1) {
-    if (segmentHitsRect(poly[i], poly[(i + 1) % n], rect)) return true;
-  }
-  return false;
-}
-
-function rectHitsSector(rect, sector) {
-  const corners = rectCorners(rect);
-  for (const corner of corners) {
-    if (pointInSector(corner, sector)) return true;
-  }
-  if (pointInRect(sector.hinge, rect) || pointInRect(sector.jamb, rect) || pointInRect(sector.leaf, rect)) return true;
-  if (segmentHitsRect(sector.hinge, sector.jamb, rect)) return true;
-  if (segmentHitsRect(sector.hinge, sector.leaf, rect)) return true;
-  if (arcHitsRect(sector, rect)) return true;
-  const centre = { x: (rect.minX + rect.maxX) / 2, y: (rect.minY + rect.maxY) / 2 };
-  return pointInSector(centre, sector);
-}
-
 function rectCorners(rect) {
   return [
     { x: rect.minX, y: rect.minY },
@@ -318,14 +471,6 @@ function rectCorners(rect) {
 
 function pointInRect(point, rect) {
   return point.x >= rect.minX && point.x <= rect.maxX && point.y >= rect.minY && point.y <= rect.maxY;
-}
-
-function pointInSector(point, sector) {
-  const dx = point.x - sector.hinge.x;
-  const dy = point.y - sector.hinge.y;
-  if (dx * dx + dy * dy > (sector.r + 1e-3) * (sector.r + 1e-3)) return false;
-  if (dx * dx + dy * dy <= 1e-8) return true;
-  return angleOnSweep(Math.atan2(dy, dx), sector.a0, sector.delta);
 }
 
 function angleOnSweep(angle, a0, delta) {

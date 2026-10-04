@@ -10,6 +10,7 @@ import { openingGeometry } from '../editor/opening-geom.js';
 import { wallQuad } from '../editor/wall-shape.js';
 import { niceScaleMm, planExportLayout } from '../io/png-fit.js';
 import { furnitureSymbol, legendForType } from '../plan2d/furniture-symbols.js';
+import { AREA_FONT_MIN, NAME_FONT_MIN } from '../plan2d/label-place.js';
 
 /**
  * @param {object} model
@@ -38,7 +39,7 @@ export function renderPlanPng(model) {
   drawWalls(ctx, model.walls || [], colors, layout.pxPerMm);
   drawOpenings(ctx, model.openings || [], colors, layout.pxPerMm);
   drawFurniture(ctx, model.furniture || [], colors, layout.pxPerMm);
-  drawLabels(ctx, model.labels || [], colors, layout.pxPerMm);
+  drawLabels(ctx, model.labels || [], colors, layout.pxPerMm, model.labelPxPerMm);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawTitle(ctx, model.name || '', colors, layout);
@@ -351,18 +352,43 @@ function applySvgTransform(ctx, transform) {
   if (rotate) ctx.rotate((Number(rotate[1]) * Math.PI) / 180);
 }
 
-function drawLabels(ctx, labels, colors, pxPerMm) {
-  const size = 15 / pxPerMm;
-  ctx.fillStyle = colors.ink;
+function drawLabels(ctx, labels, colors, pxPerMm, screenK) {
+  const k = screenK > 0 ? screenK : (pxPerMm > 0 ? pxPerMm : 0.05);
+  const phone = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 599px)').matches;
+  const namePx = tokenPx(phone ? '--fs-12' : '--fs-13', phone ? 12 : 13);
+  const areaPx = tokenPx(phone ? '--fs-10' : '--fs-12', phone ? 10 : 12);
+  const uiFont = tokenFont('--font-ui', 'sans-serif');
+  const numFont = tokenFont('--font-num', 'monospace');
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `${size}px sans-serif`;
+  ctx.textBaseline = 'alphabetic';
   for (const label of labels) {
+    if (label.hidden) continue;
+    const nameSize = label.fontStep ? NAME_FONT_MIN : namePx;
+    const areaSize = label.fontStep ? AREA_FONT_MIN : areaPx;
+    ctx.save();
+    ctx.translate(label.x, label.y);
     ctx.fillStyle = colors.ink;
-    ctx.fillText(label.name || '', label.x, label.y - size * 0.65);
-    ctx.fillStyle = colors.ink2;
-    ctx.fillText(label.area || '', label.x, label.y + size * 0.65);
+    ctx.font = `${nameSize / k}px ${uiFont}`;
+    ctx.fillText(label.name || '', 0, 0);
+    if (!label.nameOnly && label.area) {
+      ctx.fillStyle = colors.ink2;
+      ctx.font = `${areaSize / k}px ${numFont}`;
+      const lineDy = (label.lineDy > 0 ? label.lineDy : nameSize * 0.2 + 2 + areaSize * 0.8) / k;
+      ctx.fillText(label.area, 0, lineDy);
+    }
+    ctx.restore();
   }
+}
+
+function tokenPx(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function tokenFont(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw || fallback;
 }
 
 function drawTitle(ctx, name, colors, layout) {

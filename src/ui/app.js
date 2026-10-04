@@ -53,7 +53,7 @@ import { uniqueId } from '../model/ids.js';
 import { validatePlan } from '../model/validate.js';
 import { checkOpeningPlacement, openingClearance } from '../openings/clearance.js';
 import { legendForType } from '../plan2d/furniture-symbols.js';
-import { placeRoomLabel } from '../plan2d/label-place.js';
+import { AREA_FONT_MIN, NAME_FONT_MIN, placeRoomLabel } from '../plan2d/label-place.js';
 import { dimensionBandPx, mountPlanView } from '../plan2d/view.js';
 import { renderPlanPng } from './png-2d.js';
 import { deriveRooms } from '../rooms/index.js';
@@ -612,7 +612,8 @@ function pngModel() {
     walls: drawn.walls,
     openings: drawn.openings,
     furniture,
-    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera?.k || 0.05),
+    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera?.k || 0.05, drawn.walls),
+    labelPxPerMm: state.camera?.k || 0.05,
   };
 }
 
@@ -821,6 +822,7 @@ function bindDebug() {
     const planPx = state.phoneOuterW * state.camera.k;
     return { ratio: planPx / state.phoneAvailPx, planPx, availPx: state.phoneAvailPx };
   };
+  debugRef.hiddenLabels = () => hiddenLabelIds.slice();
   debugRef.view3d = () => state.view3d || null;
   debugRef.store = null;
 }
@@ -1355,8 +1357,12 @@ function emptyInspector(live) {
       <span class="num">${escapeHtml(formatAreaM2(areaOf.get(room.id) || 0))} m²</span>
     </button>`;
   }).join('');
+  const cols = rows
+    ? `<div class="room-cols"><span>${escapeHtml(t('net.heading'))}</span><span>${escapeHtml(t('net.areaHead'))}</span></div>`
+    : '';
   return `<h2 class="panel-title">${escapeHtml(t('net.heading'))}</h2>
     <p class="total">${escapeHtml(t('net.total', { area: total }))}</p>
+    ${cols}
     ${rows || `<p class="note">${escapeHtml(t('inspector.empty'))}</p>`}
     ${unclosedBlock(live)}`;
 }
@@ -1666,7 +1672,7 @@ function buildModel() {
     walls: drawn.walls,
     openings: drawn.openings,
     furniture,
-    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera.k),
+    labels: layoutLabels(drawn.labels, drawn.rooms, drawn.openings, state.camera.k, drawn.walls),
     overlap,
     handles,
     guides: state.snap?.guides || [],
@@ -1699,15 +1705,17 @@ function textPx(text, size) {
 
 const textMeasure = new Map();
 let labelCache = { key: '', k: 0, labels: null };
+let hiddenLabelIds = [];
+const LABEL_LINE_GAP = 2;
 
-function labelTypePx(className) {
-  const phone = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 599px)').matches;
-  if (className === 'label-area') return phone ? 10 : 12;
-  return phone ? 12 : 13;
+function labelTypePx(className, phone) {
+  if (className === 'label-area') return phone ? AREA_FONT_MIN : 12;
+  return phone ? NAME_FONT_MIN : 13;
 }
 
-function measureSvgText(className, text) {
-  const size = labelTypePx(className);
+function measureSvgText(className, text, sizePx) {
+  const phone = labelIsPhone();
+  const size = sizePx > 0 ? sizePx : labelTypePx(className, phone);
   const key = `${className}\n${size}\n${text || ''}`;
   const cached = textMeasure.get(key);
   if (cached) return cached;
@@ -1725,10 +1733,13 @@ function measureSvgText(className, text) {
       node.setAttribute('class', className);
       node.setAttribute('x', '0');
       node.setAttribute('y', '0');
+      if (sizePx > 0) {
+        node.setAttribute('font-size', String(size));
+        node.style.fontSize = `${size}px`;
+      }
       node.textContent = text || '';
       svg.appendChild(node);
       const box = node.getBBox();
-      node.remove();
       if ((text || '') && box.width > 0) {
         metrics = {
           w: box.width,
@@ -1736,6 +1747,7 @@ function measureSvgText(className, text) {
           descent: Math.max(0, box.y + box.height),
         };
       }
+      node.remove();
     }
   } catch {
     metrics = fallback;
@@ -1744,34 +1756,61 @@ function measureSvgText(className, text) {
   return metrics;
 }
 
-function layoutLabels(labels, rooms, openings, k) {
+function layoutLabels(labels, rooms, openings, k, walls) {
   const scale = k > 0 ? k : 0.05;
+  const phone = labelIsPhone();
+  const dividers = virtualDividers(walls);
   const measured = (labels || []).map((label) => {
     const nameM = measureSvgText('label-name', label.name);
     const areaM = measureSvgText('label-area', label.area);
-    const lineDy = Math.max(1, Math.round((nameM.descent + areaM.ascent) * 10) / 10);
-    return { label, nameM, areaM, lineDy };
+    const lineDy = nameM.descent + LABEL_LINE_GAP + areaM.ascent;
+    let step = null;
+    if (!phone) {
+      const nameS = measureSvgText('label-name', label.name, NAME_FONT_MIN);
+      const areaS = measureSvgText('label-area', label.area, AREA_FONT_MIN);
+      step = {
+        boxW: Math.max(nameS.w, areaS.w),
+        nameW: nameS.w,
+        nameAscent: nameS.ascent,
+        nameDescent: nameS.descent,
+        areaGap: nameS.descent + LABEL_LINE_GAP + areaS.ascent,
+        areaDescent: areaS.descent,
+      };
+    }
+    return { label, nameM, areaM, lineDy, step };
   });
-  const key = labelStructureKey(measured, rooms, openings);
+  const key = labelStructureKey(measured, rooms, openings, walls, phone);
   if (labelCache.labels && labelCache.key === key && labelCache.k > 0) {
     const drift = Math.abs(scale - labelCache.k) / labelCache.k;
-    if (drift <= 0.05) return labelCache.labels;
+    if (drift <= 0.05) {
+      rememberHidden(labelCache.labels);
+      return labelCache.labels;
+    }
   }
-  const placed = measured.map(({ label, nameM, areaM, lineDy }) => {
+  const placed = measured.map(({ label, nameM, areaM, lineDy, step }) => {
     const room = (rooms || []).find((item) => item.id === label.id);
-    if (!room?.points || room.points.length < 3) return { ...label, lineDy };
+    if (!room?.points || room.points.length < 3) {
+      return { ...label, lineDy, nameOnly: false, hidden: false };
+    }
     const swings = swingsInto(room.points, openings);
-    const pad = 1;
     const result = placeRoomLabel({
       polygon: room.points,
       at: { x: label.x, y: label.y },
       swings,
-      boxW: Math.max(nameM.w, areaM.w) + pad,
-      nameW: nameM.w + pad,
-      nameAscent: nameM.ascent + 0.5,
-      nameDescent: nameM.descent + 0.5,
+      dividers,
+      phone,
+      boxW: Math.max(nameM.w, areaM.w),
+      nameW: nameM.w,
+      nameAscent: nameM.ascent,
+      nameDescent: nameM.descent,
       areaGap: lineDy,
-      areaDescent: areaM.descent + 0.5,
+      areaDescent: areaM.descent,
+      stepBoxW: step?.boxW,
+      stepNameW: step?.nameW,
+      stepNameAscent: step?.nameAscent,
+      stepNameDescent: step?.nameDescent,
+      stepAreaGap: step?.areaGap,
+      stepAreaDescent: step?.areaDescent,
       k: scale,
     });
     return {
@@ -1779,15 +1818,35 @@ function layoutLabels(labels, rooms, openings, k) {
       x: result.x,
       y: result.y,
       nameOnly: result.nameOnly,
+      hidden: result.hidden,
       lineDy: result.lineDy,
+      fontStep: !!result.fontStep,
     };
   });
   labelCache = { key, k: scale, labels: placed };
+  rememberHidden(placed);
   return placed;
 }
 
-function labelStructureKey(measured, rooms, openings) {
-  const parts = [];
+function labelIsPhone() {
+  return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 599px)').matches;
+}
+
+function rememberHidden(labels) {
+  hiddenLabelIds = (labels || []).filter((label) => label.hidden).map((label) => label.id);
+}
+
+function virtualDividers(walls) {
+  const out = [];
+  for (const wall of walls || []) {
+    if (!wall?.virtual || !wall.a || !wall.b) continue;
+    out.push({ a: { x: wall.a.x, y: wall.a.y }, b: { x: wall.b.x, y: wall.b.y } });
+  }
+  return out;
+}
+
+function labelStructureKey(measured, rooms, openings, walls, phone) {
+  const parts = [phone ? 'phone' : 'desk'];
   for (const row of measured) {
     const room = (rooms || []).find((item) => item.id === row.label.id);
     parts.push(
@@ -1797,10 +1856,16 @@ function labelStructureKey(measured, rooms, openings) {
       row.nameM.w.toFixed(1),
       row.areaM.w.toFixed(1),
       row.lineDy.toFixed(1),
+      row.step ? row.step.boxW.toFixed(1) : '0',
+      row.step ? row.step.areaGap.toFixed(1) : '0',
     );
     if (room?.points) {
       for (const point of room.points) parts.push(point.x.toFixed(0), point.y.toFixed(0));
     }
+  }
+  for (const wall of walls || []) {
+    if (!wall?.virtual || !wall.a || !wall.b) continue;
+    parts.push('v', wall.a.x, wall.a.y, wall.b.x, wall.b.y);
   }
   for (const item of openings || []) {
     const opening = item.opening;
@@ -1875,7 +1940,7 @@ function floorGraphics(floor, derived, opts) {
         x: at.x,
         y: at.y,
         name: room?.name || '',
-        area: t('net.room', { area: formatAreaM2(face.areaM2 || 0) }),
+        area: t('net.roomShort', { area: formatAreaM2(face.areaM2 || 0) }),
         minX, minY, maxX, maxY,
       });
     }
@@ -2440,11 +2505,9 @@ function selectFromHit(hit) {
   else if (hit.kind === 'rotate') state.selection = { kind: 'furniture', id: hit.id };
   else state.selection = { kind: hit.kind, id: hit.id };
   state.formError = '';
-  if (state.layout === 'phone' && state.selection && (state.readOnly || state.sheetPage === 'props')) {
-    if (state.readOnly) {
-      state.sheetPage = 'props';
-      if (state.sheetSnap < 1) state.sheetSnap = 1;
-    }
+  if (state.layout === 'phone' && state.selection && (state.readOnly || state.selection.kind === 'room')) {
+    state.sheetPage = 'props';
+    if (state.sheetSnap < 1) state.sheetSnap = 1;
   }
   renderChrome();
 }
